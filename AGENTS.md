@@ -28,7 +28,11 @@ We use a **Client-Server Architecture** with a **Backend-for-Frontend (BFF)** pa
 
 - **NO TAILWIND**: Do not use TailwindCSS or NativeWind.
 - **NO HARDCODED VALUES**: You must never hardcode hex colors, spacing units (margins/paddings), font sizes, or border radii directly in components.
-- **Design Tokens are the Source of Truth**: All UI styling must map to tokens defined in `tokens.ts` (which are synced from Figma). Use these tokens within **React Native Unistyles**.
+- **Design Tokens are the Source of Truth**: All UI styling must map to tokens defined in `tokens.ts` (which are synced from Figma).
+- **Hybrid Unistyles Approach**: Use **React Native Unistyles** for dynamic theming, but restrict its theme registry _only_ to `colors`.
+- **Static Layout & Typography**: Never put typography, layout, or spacing inside the Unistyles theme registry. Import layout tokens (like `spacing`, `typography`, and flat semantic tokens like `siteGutter` or `defaultBorderRadius`) directly from `tokens.ts`.
+- **Flat Semantic Tokens**: Implement flat semantic aliases mapped from primitives rather than deeply nested categories (e.g. `export const siteGutter = spacing[24];`).
+- **No Inline Hook Styling**: Do not pull styles directly into JSX using `useUnistyles()` hooks. Always use Unistyles' intercepting `StyleSheet.create((theme) => (...))` at the bottom of your component files.
 - **Figma MCP Workflow**: We pull shared UI components from Figma using the Figma MCP server.
   - Always check for an existing shared component (e.g., `Button`, `Card`, `Avatar`, `Segmented Input`) before creating a new one.
   - Use the `figma-implement-design` skill when translating Figma specs to code to ensure 1:1 visual fidelity.
