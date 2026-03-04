@@ -121,9 +121,34 @@ export const typography = {
   },
 } as const satisfies Record<string, TypographyToken>;
 
+export const spacing = {
+  2: 2,
+  4: 4,
+  8: 8,
+  16: 16,
+  24: 24,
+  32: 32,
+  40: 40,
+  48: 48,
+  56: 56,
+  64: 64,
+  72: 72,
+  80: 80,
+  88: 88,
+  96: 96,
+  104: 104,
+} as const;
+
+// Semantic token mappings
+export const siteGutter = spacing[24];
+export const defaultBorderRadius = spacing[8];
+
 export const designTokens = {
   colors,
   fontFamilies,
   fontWeights,
   typography,
+  spacing,
+  siteGutter,
+  defaultBorderRadius,
 } as const;
