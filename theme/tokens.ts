@@ -8,6 +8,7 @@ export type TypographyToken = Readonly<{
   lineHeight: number;
   fontWeight: FontWeight;
   letterSpacing: number;
+  textTransform?: TextStyle["textTransform"];
 }>;
 
 // Extracted from Figma file C4ZIO7dO9LwK158lzLUKCH, node 18:728.
@@ -35,6 +36,7 @@ export const colors = {
   green: "#14B8A6",
   green32: "#14B8A652",
   green08: "#14B8A614",
+  linkColor: "#0EA5E9",
 } as const;
 
 export const fontFamilies = {
@@ -97,6 +99,7 @@ export const typography = {
     lineHeight: 24,
     fontWeight: fontWeights.black,
     letterSpacing: 0,
+    textTransform: "uppercase",
   },
   paragraph: {
     fontFamily: fontFamilies.body,
@@ -119,11 +122,59 @@ export const typography = {
     fontWeight: fontWeights.regular,
     letterSpacing: 0,
   },
+  inputText: {
+    fontFamily: fontFamilies.body,
+    fontSize: 18,
+    lineHeight: 24,
+    fontWeight: fontWeights.regular,
+    letterSpacing: 0,
+  },
+  buttonTextLarge: {
+    fontFamily: fontFamilies.display,
+    fontSize: 20,
+    lineHeight: 20,
+    fontWeight: fontWeights.bold,
+    letterSpacing: 0,
+  },
+  buttonText: {
+    fontFamily: fontFamilies.display,
+    fontSize: 18,
+    lineHeight: 18,
+    fontWeight: fontWeights.bold,
+    letterSpacing: 0,
+  },
 } as const satisfies Record<string, TypographyToken>;
+
+export const spacing = {
+  2: 2,
+  4: 4,
+  8: 8,
+  16: 16,
+  24: 24,
+  32: 32,
+  40: 40,
+  48: 48,
+  56: 56,
+  64: 64,
+  72: 72,
+  80: 80,
+  88: 88,
+  96: 96,
+  104: 104,
+} as const;
+
+// Semantic token mappings
+export const siteGutter = spacing[24];
+export const defaultBorderRadius = spacing[8];
+export const pillBorderRadius = spacing[40];
 
 export const designTokens = {
   colors,
   fontFamilies,
   fontWeights,
   typography,
+  spacing,
+  siteGutter,
+  defaultBorderRadius,
+  pillBorderRadius,
 } as const;
