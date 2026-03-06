@@ -38,13 +38,19 @@ We use a **Client-Server Architecture** with a **Backend-for-Frontend (BFF)** pa
   - Use the `figma-implement-design` skill when translating Figma specs to code to ensure 1:1 visual fidelity.
 - **Modern Minimal Strategy**: Keep components clean, use large accessible touch targets (min 44pt), and ensure the Domino Tiles remain the visual hero.
 
-## 4. State Management Conventions
+## 4. UI Implementation & Animation Patterns
+
+- **Animations**: Use `react-native-reanimated` exclusively for smooth, performant micro-interactions and transitions (e.g., `useAnimatedStyle`, `withTiming`, `Animated.createAnimatedComponent`). Do not use React Native's standard `Animated` API.
+- **Complex Visuals & Gradients**: Use `react-native-svg` for elaborate backgrounds, radial/linear gradients, and text masking. Avoid bringing in specialized third-party masking or gradient libraries (e.g., do not use `expo-linear-gradient`).
+- **Minimal Dependencies**: Build robust custom components leveraging native primitives (`View`, `Pressable`, `TextInput`) plus Unistyles rather than relying on external cross-platform UI libraries. **CRITICAL: You must explicitly ask the user for permission before installing any new npm packages.** We want to exhaust all native/custom options before adding dependencies.
+
+## 5. State Management Conventions
 
 - Use **Zustand** exclusively for ephemeral, app/UI state (e.g., current tab selection, visual toggle flags).
 - Use **TanStack Query** exclusively for server state (e.g., fetching profiles, game event logs, active games lists).
 - Utilize **Supabase Realtime channels** to trigger query invalidations or append to event logs.
 
-## 5. Agent Workflow & Best Practices
+## 6. Agent Workflow & Best Practices
 
 1. **Analyze First**: Before writing code, review the `/docs/` folder (`product-requirements.md`, `software-requirements-specification.md`, `user-interface-design.md`) to understand feature context.
 2. **Prioritize Types**: Always define strict TypeScript interfaces/types for Supabase payloads, Edge Function responses, and shared UI component props. No `any` types.
