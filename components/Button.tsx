@@ -1,15 +1,20 @@
-import { pillBorderRadius, spacing, typography } from "@/theme/tokens";
+import {
+  designTokens,
+  pillBorderRadius,
+  spacing,
+  typography,
+} from "@/theme/tokens";
 import { Image } from "expo-image";
 import { useMemo, useState } from "react";
 import { Pressable, StyleProp, Text, View, ViewStyle } from "react-native";
 import Svg, {
-    Defs,
-    LinearGradient,
-    RadialGradient,
-    Rect,
-    Stop,
+  Defs,
+  LinearGradient,
+  RadialGradient,
+  Rect,
+  Stop,
 } from "react-native-svg";
-import { StyleSheet, useUnistyles } from "react-native-unistyles";
+import { StyleSheet } from "react-native-unistyles";
 export type ButtonVariant = "default" | "secondary" | "play" | "tertiary";
 
 interface ButtonProps {
@@ -29,7 +34,6 @@ export function Button({
   style,
   hasIcon = false,
 }: ButtonProps) {
-  const { theme } = useUnistyles();
   const isDefault = variant === "default";
 
   // We explicitly measure button dimensions via onLayout.
@@ -101,7 +105,7 @@ export function Button({
         style,
       ]}
     >
-      {isDefault && buttonSize.width > 0 && buttonSize.height > 0 ? (
+      {isDefault && buttonSize.width > 0 && buttonSize.height > 0 && (
         <Svg
           width={buttonSize.width}
           height={buttonSize.height}
@@ -116,9 +120,9 @@ export function Button({
               x2="100%"
               y2="100%"
             >
-              <Stop offset="0%" stopColor={theme.colors.blurple} />
-              <Stop offset="50%" stopColor={theme.colors.purple} />
-              <Stop offset="100%" stopColor={theme.colors.pink} />
+              <Stop offset="0%" stopColor={designTokens.colors.blurple} />
+              <Stop offset="50%" stopColor={designTokens.colors.purple} />
+              <Stop offset="100%" stopColor={designTokens.colors.pink} />
             </LinearGradient>
             <RadialGradient
               id={gradientIds.radialLeft}
@@ -165,14 +169,80 @@ export function Button({
             fill={`url(#${gradientIds.radialRight})`}
           />
         </Svg>
-      ) : null}
+      )}
+
+      {variant === "play" && buttonSize.width > 0 && buttonSize.height > 0 && (
+        <Svg
+          width={buttonSize.width}
+          height={buttonSize.height}
+          style={[StyleSheet.absoluteFillObject, { position: "absolute" }]}
+          pointerEvents="none"
+        >
+          <Defs>
+            <LinearGradient
+              id={`${gradientIds.base}-play`}
+              x1="0%"
+              y1="0%"
+              x2="100%"
+              y2="100%"
+            >
+              <Stop offset="0%" stopColor={designTokens.colors.blue} />
+              <Stop offset="50%" stopColor={designTokens.colors.blurple} />
+              <Stop offset="100%" stopColor={designTokens.colors.green} />
+            </LinearGradient>
+            <RadialGradient
+              id={`${gradientIds.radialLeft}-play`}
+              cx="0%"
+              cy="100%"
+              r="100%"
+              fx="0%"
+              fy="75%"
+            >
+              <Stop offset="0%" stopColor="#42C4FF" stopOpacity="0.9" />
+              <Stop offset="100%" stopColor="#0EA5E9" stopOpacity="0" />
+            </RadialGradient>
+            <RadialGradient
+              id={`${gradientIds.radialRight}-play`}
+              cx="75%"
+              cy="0%"
+              r="67%"
+              fx="110%"
+              fy="20%"
+            >
+              <Stop offset="0%" stopColor="#00EBD1" stopOpacity="0.65" />
+              <Stop offset="100%" stopColor="#14B8A6" stopOpacity="0" />
+            </RadialGradient>
+          </Defs>
+          <Rect
+            x="0"
+            y="0"
+            width="100%"
+            height="100%"
+            fill={`url(#${gradientIds.base}-play)`}
+          />
+          <Rect
+            x="0"
+            y="0"
+            width="100%"
+            height="100%"
+            fill={`url(#${gradientIds.radialLeft}-play)`}
+          />
+          <Rect
+            x="0"
+            y="0"
+            width="100%"
+            height="100%"
+            fill={`url(#${gradientIds.radialRight}-play)`}
+          />
+        </Svg>
+      )}
 
       {content}
     </Pressable>
   );
 }
 
-const styles = StyleSheet.create((theme) => ({
+const styles = StyleSheet.create({
   buttonBase: {
     width: "100%",
     flexDirection: "row",
@@ -207,22 +277,22 @@ const styles = StyleSheet.create((theme) => ({
     paddingVertical: spacing[16],
     paddingHorizontal: spacing[32],
     borderWidth: 3,
-    borderColor: theme.colors.white,
+    borderColor: designTokens.colors.white,
   },
   secondaryBase: {
     height: 56,
     borderRadius: pillBorderRadius,
     paddingVertical: spacing[16],
     paddingHorizontal: spacing[32],
-    backgroundColor: theme.colors.backgroundColor,
+    backgroundColor: designTokens.colors.backgroundColor,
   },
   playBase: {
-    height: 48,
+    height: 50,
     borderRadius: spacing[32],
     paddingVertical: 12,
     paddingHorizontal: spacing[32],
     borderWidth: 3,
-    borderColor: theme.colors.white,
+    borderColor: designTokens.colors.white,
     backgroundColor: "transparent",
   },
   tertiaryBase: {
@@ -230,23 +300,23 @@ const styles = StyleSheet.create((theme) => ({
     borderRadius: spacing[32],
     paddingVertical: 12,
     paddingHorizontal: spacing[32],
-    backgroundColor: theme.colors.black08,
+    backgroundColor: designTokens.colors.black08,
   },
   // Variant label styles
   defaultLabel: {
     ...typography.buttonTextLarge,
-    color: theme.colors.white,
+    color: designTokens.colors.white,
   },
   secondaryLabel: {
     ...typography.buttonTextLarge,
-    color: theme.colors.iron,
+    color: designTokens.colors.iron,
   },
   playLabel: {
     ...typography.buttonText,
-    color: theme.colors.white,
+    color: designTokens.colors.white,
   },
   tertiaryLabel: {
     ...typography.buttonText,
-    color: theme.colors.iron,
+    color: designTokens.colors.iron,
   },
-}));
+});

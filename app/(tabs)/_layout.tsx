@@ -22,7 +22,7 @@ export default function TabLayout() {
         headerShown: false,
       }}
     >
-      <Tabs.Screen name="index" options={{ title: "Home" }} />
+      <Tabs.Screen name="home" options={{ title: "Home" }} />
       <Tabs.Screen name="story" options={{ title: "Story" }} />
       <Tabs.Screen name="quests" options={{ title: "Quests" }} />
       <Tabs.Screen name="more" options={{ title: "More" }} />

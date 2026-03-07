@@ -37,6 +37,6 @@ StyleSheet.configure({
     dark: darkTheme, // Fallback for dark theme to unblock feature testing
   },
   settings: {
-    adaptiveThemes: true,
+    initialTheme: "light",
   },
 });

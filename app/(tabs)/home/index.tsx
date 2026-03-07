@@ -1,13 +1,14 @@
 import { Image } from "expo-image";
+import { useRouter } from "expo-router";
 import React from "react";
 import { ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, {
-  Defs,
-  RadialGradient,
-  Rect,
-  Stop,
-  LinearGradient as SvgLinearGradient,
+    Defs,
+    RadialGradient,
+    Rect,
+    Stop,
+    LinearGradient as SvgLinearGradient,
 } from "react-native-svg";
 import { StyleSheet } from "react-native-unistyles";
 
@@ -17,6 +18,7 @@ import { designTokens, spacing, typography } from "@/theme/tokens";
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
 
   return (
     <View style={styles.container}>
@@ -128,6 +130,7 @@ export default function HomeScreen() {
                   />
                 }
                 colorTheme="blue"
+                onPress={() => router.push("/home/casual")}
               />
               <View style={{ width: spacing[16] }} />
               <ModeButton
