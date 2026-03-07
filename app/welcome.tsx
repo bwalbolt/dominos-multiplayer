@@ -1,4 +1,5 @@
 import { Image } from "expo-image";
+import { useRouter } from "expo-router";
 import { useRef, useState } from "react";
 import {
   KeyboardAvoidingView,
@@ -54,6 +55,7 @@ const AVATARS = [
 ];
 
 export default function WelcomeScreen() {
+  const router = useRouter();
   const [selectedAvatar, setSelectedAvatar] = useState<number | null>(null);
   const [displayName, setDisplayName] = useState("");
   const scrollRef = useRef<ScrollView>(null);
@@ -216,11 +218,7 @@ export default function WelcomeScreen() {
               hasIcon={true}
               disabled={!isValid}
               onPress={() => {
-                // TODO: Wire up actual onboarding submission, anonymous auth, and profile persistence
-                console.log("Submit profile:", {
-                  avatarIndex: selectedAvatar,
-                  displayName: displayName.trim(),
-                });
+                router.replace("/(tabs)" as any);
               }}
             />
             <Pressable

@@ -1,6 +1,6 @@
-import { Stack } from "expo-router";
-
 import "@/theme/unistyles";
+
+import { Stack } from "expo-router";
 
 export default function RootLayout() {
   return <Stack screenOptions={{ headerShown: false }} />;
