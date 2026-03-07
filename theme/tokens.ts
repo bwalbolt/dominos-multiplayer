@@ -20,6 +20,7 @@ export const colors = {
   black45: "#00000073",
   black24: "#0000003D",
   black08: "#00000014",
+  black04: "#0000000A",
   iron: "#4E3D42",
   shadow: "#00156B3D",
   teal: "#086375",
