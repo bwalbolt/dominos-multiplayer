@@ -6,7 +6,8 @@ import { colors, spacing, typography } from "@/theme/tokens";
 export default function QuestsScreen() {
   return (
     <View style={styles.container}>
-      <Text style={styles.text}>Quests Screen Placeholder</Text>
+      <Text style={styles.headline}>Quests</Text>
+      <Text style={styles.text}>(Coming Soon)</Text>
     </View>
   );
 }
@@ -18,8 +19,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: colors.backgroundColor,
   },
+  headline: {
+    ...typography.headline2,
+    color: colors.iron,
+    textAlign: "center",
+    paddingHorizontal: spacing[24],
+  },
   text: {
-    ...typography.headline4,
+    ...typography.headline5,
     color: colors.iron,
     textAlign: "center",
     paddingHorizontal: spacing[24],

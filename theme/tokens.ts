@@ -129,6 +129,13 @@ export const typography = {
     fontWeight: fontWeights.regular,
     letterSpacing: 0,
   },
+  scoreText: {
+    fontFamily: fontFamilies.body,
+    fontSize: 24,
+    lineHeight: 24,
+    fontWeight: fontWeights.black,
+    letterSpacing: 0,
+  },
   buttonTextLarge: {
     fontFamily: fontFamilies.display,
     fontSize: 20,
