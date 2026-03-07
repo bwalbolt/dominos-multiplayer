@@ -122,7 +122,7 @@ export default function HomeScreen() {
                 subtitle="No timer"
                 icon={
                   <Image
-                    source={require("@/assets/images/icons/casual-icon.svg")}
+                    source={require("@/assets/images/casual-icon.svg")}
                     style={styles.casualIcon}
                     contentFit="contain"
                   />
@@ -135,7 +135,7 @@ export default function HomeScreen() {
                 subtitle="Competitive"
                 icon={
                   <Image
-                    source={require("@/assets/images/icons/ranked-icon.svg")}
+                    source={require("@/assets/images/ranked-icon.svg")}
                     style={styles.rankedIcon}
                     contentFit="contain"
                   />
@@ -150,7 +150,7 @@ export default function HomeScreen() {
                 subtitle="Free rewards"
                 icon={
                   <Image
-                    source={require("@/assets/images/icons/daily-icon.svg")}
+                    source={require("@/assets/images/daily-icon.svg")}
                     style={styles.dailyIcon}
                     contentFit="contain"
                   />
@@ -163,7 +163,7 @@ export default function HomeScreen() {
                 subtitle="New skins!"
                 icon={
                   <Image
-                    source={require("@/assets/images/icons/shop-icon.svg")}
+                    source={require("@/assets/images/shop-icon.svg")}
                     style={styles.shopIcon}
                     contentFit="contain"
                   />

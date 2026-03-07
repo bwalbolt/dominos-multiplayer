@@ -92,13 +92,6 @@ export function BottomNav({
             }
           };
 
-          const onLongPress = () => {
-            navigation.emit({
-              type: "tabLongPress",
-              target: route.key,
-            });
-          };
-
           const iconAssets = ICONS[route.name];
 
           if (!iconAssets) {
@@ -112,7 +105,7 @@ export function BottomNav({
               accessibilityState={isFocused ? { selected: true } : {}}
               accessibilityLabel={options.tabBarAccessibilityLabel}
               onPress={onPress}
-              onLongPress={onLongPress}
+              onLongPress={onPress}
               style={styles.tabButton}
             >
               <View style={styles.iconContainer}>
