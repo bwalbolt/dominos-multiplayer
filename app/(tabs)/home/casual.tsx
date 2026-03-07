@@ -1,7 +1,7 @@
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 import { StyleSheet } from "react-native-unistyles";
@@ -11,6 +11,49 @@ import { DifficultyButton } from "@/components/difficulty-button";
 import { designTokens, spacing, typography } from "@/theme/tokens";
 
 type Difficulty = "Easy" | "Medium" | "Hard";
+
+// Dashboard ADD_NEW dashed border math
+const ADD_NEW_SIZE = 62;
+const ADD_NEW_RADIUS = spacing[8] - 1; // 7
+// Perimeter of a rounded rectangle: 2 * width + 2 * height - 8 * r + 2 * PI * r
+const ADD_NEW_PERIMETER =
+  4 * ADD_NEW_SIZE - 8 * ADD_NEW_RADIUS + 2 * Math.PI * ADD_NEW_RADIUS;
+const ADD_NEW_SEGMENT = ADD_NEW_PERIMETER / 18; // 18 segments
+const ADD_NEW_DASH = ADD_NEW_SEGMENT / 2 + 1;
+const ADD_NEW_GAP = ADD_NEW_SEGMENT / 2 - 1;
+
+const MOCK_FRIENDS = [
+  {
+    id: "1",
+    name: "Lilly289",
+    image: require("@/assets/images/avatar(5).png"),
+    isOnline: true,
+  },
+  {
+    id: "2",
+    name: "Mike",
+    image: require("@/assets/images/avatar(1).png"),
+    isOnline: true,
+  },
+  {
+    id: "3",
+    name: "Alex",
+    image: require("@/assets/images/avatar(20).png"),
+    isOnline: true,
+  },
+  {
+    id: "4",
+    name: "JoeBob\nChill",
+    image: require("@/assets/images/avatar(12).png"),
+    isOnline: false,
+  },
+  {
+    id: "5",
+    name: "Jessica",
+    image: require("@/assets/images/avatar(22).png"),
+    isOnline: false,
+  },
+];
 
 export default function CasualGameSelection() {
   const router = useRouter();
@@ -98,6 +141,60 @@ export default function CasualGameSelection() {
             onPress={() => console.log("Play Computer", difficulty)}
             style={styles.playButton}
           />
+        </View>
+
+        {/* Play a Friend Section */}
+        <View style={styles.playAFriendSection}>
+          <View style={styles.playAFriendHeader}>
+            <Text style={styles.playAFriendTitle}>Play a Friend</Text>
+            <Pressable hitSlop={8}>
+              <Text style={styles.viewAllText}>View all</Text>
+            </Pressable>
+          </View>
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.friendsScrollContent}
+            style={styles.friendsScrollView}
+          >
+            {MOCK_FRIENDS.map((friend) => (
+              <View key={friend.id} style={styles.friendItem}>
+                <View style={styles.avatarContainer}>
+                  <Image source={friend.image} style={styles.avatarImage} />
+                  {friend.isOnline && <View style={styles.onlineIndicator} />}
+                </View>
+                <Text style={styles.friendName} numberOfLines={2}>
+                  {friend.name}
+                </Text>
+              </View>
+            ))}
+
+            {/* Add New Button */}
+            <Pressable style={styles.friendItem}>
+              <View style={styles.addNewAvatar}>
+                <Svg style={StyleSheet.absoluteFill}>
+                  <Rect
+                    x="1"
+                    y="1"
+                    width="62"
+                    height="62"
+                    rx={spacing[8] - 1}
+                    ry={spacing[8] - 1}
+                    stroke={designTokens.colors.black24}
+                    strokeWidth="2"
+                    strokeDasharray={`${ADD_NEW_DASH}, ${ADD_NEW_GAP}`}
+                    fill="none"
+                  />
+                </Svg>
+                <Image
+                  source={require("@/assets/images/icons/plus-icon.svg")}
+                  style={styles.addNewIcon}
+                />
+              </View>
+              <Text style={styles.friendName}>Add New</Text>
+            </Pressable>
+          </ScrollView>
         </View>
       </View>
     </View>
@@ -191,5 +288,80 @@ const styles = StyleSheet.create({
   },
   playButton: {
     // using Button default variant for now
+  },
+  playAFriendSection: {
+    paddingBottom: spacing[40],
+  },
+  playAFriendHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: spacing[4],
+    height: 24,
+  },
+  playAFriendTitle: {
+    ...typography.labelText,
+    color: designTokens.colors.iron,
+  },
+  viewAllText: {
+    ...typography.headline6,
+    color: designTokens.colors.blue,
+  },
+  friendsScrollView: {
+    marginHorizontal: -designTokens.siteGutter,
+  },
+  friendsScrollContent: {
+    paddingHorizontal: designTokens.siteGutter,
+    gap: spacing[8],
+  },
+  friendItem: {
+    alignItems: "center",
+    width: 72,
+  },
+  avatarContainer: {
+    width: 64,
+    height: 64,
+    marginBottom: spacing[4],
+    marginTop: 6,
+  },
+  avatarImage: {
+    width: 64,
+    height: 64,
+    borderRadius: spacing[8],
+    borderWidth: 1,
+    borderColor: designTokens.colors.white,
+  },
+  onlineIndicator: {
+    position: "absolute",
+    top: -5,
+    right: -2,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: designTokens.colors.green,
+    borderWidth: 1,
+    borderColor: designTokens.colors.white,
+    zIndex: 1,
+  },
+  friendName: {
+    ...typography.smallText,
+    color: designTokens.colors.iron,
+    textAlign: "center",
+  },
+  addNewAvatar: {
+    width: 64,
+    height: 64,
+    borderRadius: spacing[8],
+    backgroundColor: designTokens.colors.white,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: spacing[4],
+    marginTop: 6,
+    position: "relative",
+  },
+  addNewIcon: {
+    width: 16,
+    height: 16,
+    tintColor: designTokens.colors.black45,
   },
 });
