@@ -2,37 +2,37 @@ import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import { useRef, useState } from "react";
 import {
-  KeyboardAvoidingView,
-  Linking,
-  Platform,
-  Pressable,
-  ScrollView,
-  Text,
-  TextInput,
-  View,
+    KeyboardAvoidingView,
+    Linking,
+    Platform,
+    Pressable,
+    ScrollView,
+    Text,
+    TextInput,
+    View,
 } from "react-native";
 import Animated, {
-  useAnimatedStyle,
-  withTiming,
+    useAnimatedStyle,
+    withTiming,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, {
-  Defs,
-  RadialGradient,
-  Rect,
-  Stop,
-  LinearGradient as SvgLinearGradient,
-  Text as SvgText,
+    Defs,
+    RadialGradient,
+    Rect,
+    Stop,
+    LinearGradient as SvgLinearGradient,
+    Text as SvgText,
 } from "react-native-svg";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
 
 import { Button } from "@/components/Button";
 
 import {
-  defaultBorderRadius,
-  siteGutter,
-  spacing,
-  typography,
+    defaultBorderRadius,
+    siteGutter,
+    spacing,
+    typography,
 } from "@/theme/tokens";
 
 const AVATARS = [
@@ -218,7 +218,7 @@ export default function WelcomeScreen() {
               hasIcon={true}
               disabled={!isValid}
               onPress={() => {
-                router.replace("/(tabs)" as any);
+                router.replace("/(tabs)/home" as any);
               }}
             />
             <Pressable

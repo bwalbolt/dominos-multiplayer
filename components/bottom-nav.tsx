@@ -8,7 +8,7 @@ import { StyleSheet } from "react-native-unistyles";
 import { colors, spacing } from "@/theme/tokens";
 
 const ICONS: Record<string, { active: any; inactive: any }> = {
-  index: {
+  home: {
     active: require("@/assets/images/icons/nav-home-active.svg"),
     inactive: require("@/assets/images/icons/nav-home.svg"),
   },
