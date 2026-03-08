@@ -11,6 +11,7 @@ import Svg, {
 import { StyleSheet } from "react-native-unistyles";
 
 import { ProfileCard } from "@/components/profile-card";
+import { RecentMatchItem } from "@/components/recent-match-item";
 import { StatCard } from "@/components/stat-card";
 import { colors, siteGutter, spacing, typography } from "@/theme/tokens";
 
@@ -109,7 +110,6 @@ export default function MoreScreen() {
           </View>
           <ProfileCard />
         </View>
-
         <View style={styles.bottomSection}>
           <View style={styles.statsRow}>
             <View style={styles.statWrapper}>
@@ -125,8 +125,28 @@ export default function MoreScreen() {
             </View>
           </View>
 
-          {/* Recent Matches will go here */}
-          <View style={{ height: 300 }} />
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Recent Matches</Text>
+            <Text style={styles.viewAll}>View all</Text>
+          </View>
+
+          <View style={styles.matchesCard}>
+            <RecentMatchItem
+              title="vs. Computer (Easy)"
+              subtitle="Casual • 25 mins ago"
+              isWin={true}
+              xpValue="24"
+              scoreDisplay="105 to 60"
+            />
+            <RecentMatchItem
+              title="vs. JohnDoe"
+              subtitle="Ranked • 25 mins ago"
+              isWin={false}
+              xpValue="5"
+              scoreDisplay="100 to 45"
+              isLast={true}
+            />
+          </View>
         </View>
       </ScrollView>
     </>
@@ -139,7 +159,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.backgroundColor,
   },
   contentContainer: {
-    paddingBottom: 112, // Enough space for BottomNav + padding
+    paddingBottom: 128, // Enough space for BottomNav + padding
   },
   profileHeader: {
     paddingHorizontal: siteGutter,
@@ -161,8 +181,34 @@ const styles = StyleSheet.create({
   statsRow: {
     flexDirection: "row",
     gap: spacing[8],
+    marginBottom: spacing[24],
   },
   statWrapper: {
     flex: 1,
+  },
+  sectionHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: spacing[16],
+  },
+  sectionTitle: {
+    ...typography.labelText,
+    color: colors.iron,
+  },
+  viewAll: {
+    ...typography.headline6,
+    color: colors.blue,
+  },
+  matchesCard: {
+    backgroundColor: colors.backgroundColor,
+    borderRadius: spacing[16],
+    paddingHorizontal: spacing[16],
+    paddingVertical: spacing[8],
+    shadowColor: colors.shadow,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 1,
+    shadowRadius: 8,
+    elevation: 4,
   },
 });

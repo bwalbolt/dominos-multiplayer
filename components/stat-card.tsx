@@ -80,8 +80,8 @@ const styles = StyleSheet.create({
   },
   bgIconContainer: {
     position: "absolute",
-    right: -10,
-    bottom: -10,
+    right: -8,
+    bottom: 0,
     width: 60,
     height: 60,
     opacity: 1,

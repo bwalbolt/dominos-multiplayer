@@ -63,7 +63,7 @@ Build the `Player Profile` UI from Figma node `5:1209` in file `C4ZIO7dO9LwK158l
 
 ### T3: Build the Recent Matches Section
 
-**Do:** Implement the "Recent Matches" list below the stats row. Include the section header ("Recent Matches", "View all") and build reusable match list items. Use dummy data from Figma ("vs. Computer (Easy)", "vs. JohnDoe"). Include the subtle icons, XP rewards ("+24 XP", "+5 XP"), and score comparisons. Use the provided SVG assets in `assets/images/icons/` for the background graphics.
+**Do:** Implement the "Recent Matches" list below the stats row. Include the section header ("Recent Matches", "View all") and build reusable match list items. Use dummy data from Figma ("vs. Computer (Easy)", "vs. JohnDoe"). Include the subtle icons, XP rewards ("+24 XP", "+5 XP"), and score comparisons. Use the provided SVG assets in `assets/images/icons/` for the icons.
 
 **Files:** `app/(tabs)/more.tsx`, `components/recent-match-item.tsx` (optional)
 
