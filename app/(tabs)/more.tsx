@@ -11,6 +11,7 @@ import Svg, {
 import { StyleSheet } from "react-native-unistyles";
 
 import { ProfileCard } from "@/components/profile-card";
+import { StatCard } from "@/components/stat-card";
 import { colors, siteGutter, spacing, typography } from "@/theme/tokens";
 
 export default function MoreScreen() {
@@ -110,7 +111,21 @@ export default function MoreScreen() {
         </View>
 
         <View style={styles.bottomSection}>
-          {/* Stats and Recent Matches will go here */}
+          <View style={styles.statsRow}>
+            <View style={styles.statWrapper}>
+              <StatCard
+                title="Total Wins"
+                value="48"
+                todaysWins={3}
+                iconType="trophy"
+              />
+            </View>
+            <View style={styles.statWrapper}>
+              <StatCard title="Win Rate" value="62" unit="%" iconType="stats" />
+            </View>
+          </View>
+
+          {/* Recent Matches will go here */}
           <View style={{ height: 300 }} />
         </View>
       </ScrollView>
@@ -142,5 +157,12 @@ const styles = StyleSheet.create({
   bottomSection: {
     paddingHorizontal: spacing[24],
     paddingTop: spacing[24],
+  },
+  statsRow: {
+    flexDirection: "row",
+    gap: spacing[8],
+  },
+  statWrapper: {
+    flex: 1,
   },
 });

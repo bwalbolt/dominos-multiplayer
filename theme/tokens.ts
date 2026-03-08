@@ -139,6 +139,13 @@ export const typography = {
     fontWeight: fontWeights.black,
     letterSpacing: 0,
   },
+  statValueText: {
+    fontFamily: fontFamilies.body,
+    fontSize: 32,
+    lineHeight: 32,
+    fontWeight: fontWeights.black,
+    letterSpacing: 0,
+  },
   buttonTextLarge: {
     fontFamily: fontFamilies.display,
     fontSize: 20,
