@@ -15,6 +15,8 @@ export type TypographyToken = Readonly<{
 export const colors = {
   backgroundColor: "#F5F7FF",
   white: "#FFFFFF",
+  white08: "#FFFFFF14",
+  white24: "#FFFFFF3D",
   black: "#000000",
   black66: "#000000A8",
   black45: "#00000073",
