@@ -13,7 +13,7 @@ export type PlayerPosition = "player_1" | "player_2";
 export type GameVariant = "fives";
 export type GameStatus = "pending" | "active" | "completed" | "forfeited";
 export type RoundStatus = "setup" | "active" | "blocked" | "completed";
-export type ChainSide = "left" | "right";
+export type ChainSide = "left" | "right" | "up" | "down";
 
 export type Tile = Readonly<{
   id: TileId;
@@ -42,11 +42,16 @@ export type PlayedTile = Readonly<{
   openPipFacingOutward: DominoPip;
 }>;
 
+export type BoardOpenEnd = Readonly<{
+  side: ChainSide;
+  pip: DominoPip;
+  tileId: TileId | null;
+}>;
+
 export type BoardState = Readonly<{
   layoutDirection: "horizontal" | "vertical" | "wrapped";
-  leftOpenPip: DominoPip | null;
-  rightOpenPip: DominoPip | null;
   spinnerTileId: TileId | null;
+  openEnds: readonly BoardOpenEnd[];
   tiles: readonly PlayedTile[];
 }>;
 

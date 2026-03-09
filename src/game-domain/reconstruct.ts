@@ -1,6 +1,7 @@
 import type {
   BoneyardState,
   BoardState,
+  BoardOpenEnd,
   GameParticipants,
   GameState,
   PlayerHandState,
@@ -35,12 +36,17 @@ type ReconstructionAccumulator = {
 
 const FNV_OFFSET_BASIS = 0x811c9dc5;
 const FNV_PRIME = 0x01000193;
+const CHAIN_SIDE_ORDER: readonly TilePlayedEvent["side"][] = [
+  "left",
+  "right",
+  "up",
+  "down",
+];
 
 const createEmptyBoardState = (): BoardState => ({
   layoutDirection: "horizontal",
-  leftOpenPip: null,
-  rightOpenPip: null,
   spinnerTileId: null,
+  openEnds: [],
   tiles: [],
 });
 
@@ -76,6 +82,43 @@ const clonePlayerProfile = (player: PlayerProfile): PlayerProfile => ({
   position: player.position,
   displayName: player.displayName,
 });
+
+const sortOpenEnds = (openEnds: readonly BoardOpenEnd[]): readonly BoardOpenEnd[] =>
+  [...openEnds].sort(
+    (left, right) =>
+      CHAIN_SIDE_ORDER.indexOf(left.side) - CHAIN_SIDE_ORDER.indexOf(right.side),
+  );
+
+const createSpinnerOpenEnds = (tileId: TileId, pip: Tile["sideA"]): readonly BoardOpenEnd[] =>
+  sortOpenEnds(
+    CHAIN_SIDE_ORDER.map((side) => ({
+      side,
+      pip,
+      tileId,
+    })),
+  );
+
+const upsertOpenEnd = (
+  openEnds: readonly BoardOpenEnd[],
+  nextOpenEnd: BoardOpenEnd,
+): readonly BoardOpenEnd[] => {
+  const existingIndex = openEnds.findIndex((openEnd) => openEnd.side === nextOpenEnd.side);
+
+  if (existingIndex === -1) {
+    return sortOpenEnds([...openEnds, nextOpenEnd]);
+  }
+
+  return sortOpenEnds(
+    openEnds.map((openEnd, index) =>
+      index === existingIndex ? nextOpenEnd : openEnd,
+    ),
+  );
+};
+
+const getBoardOrder = (
+  board: BoardState,
+  side: TilePlayedEvent["side"],
+): number => board.tiles.filter((tile) => tile.side === side).length;
 
 const switchActivePlayer = (
   players: GameParticipants,
@@ -260,24 +303,35 @@ const applyTilePlayedEvent = (
     boardTiles.length === 1
       ? {
           ...currentRound.board,
-          leftOpenPip: event.openPipFacingOutward,
-          rightOpenPip: event.openPipFacingOutward,
           spinnerTileId:
             tileInstance.tile.sideA === tileInstance.tile.sideB ? tileInstance.tile.id : null,
+          openEnds:
+            tileInstance.tile.sideA === tileInstance.tile.sideB
+              ? createSpinnerOpenEnds(tileInstance.tile.id, event.openPipFacingOutward)
+              : sortOpenEnds([
+                  {
+                    side: "left",
+                    pip: event.openPipFacingOutward,
+                    tileId: tileInstance.tile.id,
+                  },
+                  {
+                    side: "right",
+                    pip: event.openPipFacingOutward,
+                    tileId: tileInstance.tile.id,
+                  },
+                ]),
           tiles: boardTiles,
         }
       : {
           ...currentRound.board,
-          leftOpenPip:
-            event.side === "left"
-              ? event.openPipFacingOutward
-              : currentRound.board.leftOpenPip,
-          rightOpenPip:
-            event.side === "right"
-              ? event.openPipFacingOutward
-              : currentRound.board.rightOpenPip,
+          openEnds: upsertOpenEnd(currentRound.board.openEnds, {
+            side: event.side,
+            pip: event.openPipFacingOutward,
+            tileId: tileInstance.tile.id,
+          }),
           tiles: boardTiles,
         };
+  const boardOrder = getBoardOrder(currentRound.board, event.side);
   const handsByPlayerId: Record<PlayerId, PlayerHandState> = {
     ...currentRound.handsByPlayerId,
     [event.playerId]: updateHandState(activeHand, nextHandTileIds),
@@ -316,7 +370,7 @@ const applyTilePlayedEvent = (
         location: {
           kind: "board",
           side: event.side,
-          order: boardTiles.length - 1,
+          order: boardOrder,
         },
       },
     },

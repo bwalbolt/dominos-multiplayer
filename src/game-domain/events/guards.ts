@@ -26,7 +26,7 @@ import {
 
 const DOMINO_PIPS: readonly DominoPip[] = [0, 1, 2, 3, 4, 5, 6];
 const PLAYER_POSITIONS: readonly PlayerPosition[] = ["player_1", "player_2"];
-const CHAIN_SIDES: readonly ChainSide[] = ["left", "right"];
+const CHAIN_SIDES: readonly ChainSide[] = ["left", "right", "up", "down"];
 const GAME_VARIANTS: readonly GameVariant[] = ["fives"];
 
 type UnknownRecord = Record<string, unknown>;
@@ -40,7 +40,7 @@ const isNullableString = (value: unknown): value is string | null =>
   value === null || isString(value);
 
 const isNonNegativeInteger = (value: unknown): value is number =>
-  Number.isInteger(value) && value >= 0;
+  typeof value === "number" && Number.isInteger(value) && value >= 0;
 
 const isOneOf = <TValue extends string | number>(
   value: unknown,
@@ -75,9 +75,7 @@ const isTile = (value: unknown): value is Tile => {
   }
 
   return (
-    isTileId(value.id) &&
-    isDominoPip(value.sideA) &&
-    isDominoPip(value.sideB)
+    isTileId(value.id) && isDominoPip(value.sideA) && isDominoPip(value.sideB)
   );
 };
 
@@ -256,11 +254,11 @@ export const isGameEvent = (value: unknown): value is GameEvent =>
   isGameEndedEvent(value) ||
   isForfeitEvent(value);
 
-export const assertGameEvent = (value: unknown): asserts value is GameEvent => {
+export function assertGameEvent(value: unknown): asserts value is GameEvent {
   if (!isGameEvent(value)) {
     throw new Error("Invalid game event payload.");
   }
-};
+}
 
 export const parseGameEvent = (value: unknown): GameEvent => {
   assertGameEvent(value);
