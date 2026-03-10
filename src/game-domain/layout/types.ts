@@ -57,6 +57,6 @@ export type PlacedTileGeometry = {
  * The full geometric state of the board
  */
 export type BoardGeometry = {
-  readonly placedTiles: ReadonlyArray<PlacedTileGeometry>;
-  readonly anchors: ReadonlyArray<LayoutAnchor>;
+  readonly placedTiles: readonly PlacedTileGeometry[];
+  readonly anchors: readonly LayoutAnchor[];
 };

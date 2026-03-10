@@ -1,13 +1,11 @@
 import { domino } from "../../../theme/tokens";
-import { BoardState, ChainSide, DominoPip, PlayedTile, TileId } from "../types";
+import { BoardState, ChainSide, DominoPip, TileId } from "../types";
+import { projectPlacement } from "./project-placement";
+import { getBranchRootId, getSpinnerBranchUnlocks } from "./spinner";
 import { BoardGeometry, LayoutAnchor, PlacedTileGeometry, Point } from "./types";
 
 const TILE_WIDTH = domino.width;  // 56
 const TILE_HEIGHT = domino.height; // 112
-const HALF_WIDTH = TILE_WIDTH / 2;
-const HALF_HEIGHT = TILE_HEIGHT / 2;
-
-import { projectPlacement } from "./project-placement";
 
 /**
  * Calculates the full geometric layout of the board based on the reconstructed state.
@@ -38,12 +36,12 @@ export function calculateBoardGeometry(board: BoardState): BoardGeometry {
   tilesById.set(firstTile.tile.id, firstGeom);
 
   // We need to know which tile to attach to for each side.
-  // Initially, everything attaches to the first tile.
+  // We initialize with the root of each branch.
   const branchEnds: Record<ChainSide, TileId> = {
-    left: firstTile.tile.id,
-    right: firstTile.tile.id,
-    up: firstTile.tile.id,
-    down: firstTile.tile.id,
+    left: getBranchRootId(board, "left")!,
+    right: getBranchRootId(board, "right")!,
+    up: getBranchRootId(board, "up") || firstTile.tile.id,
+    down: getBranchRootId(board, "down") || firstTile.tile.id,
   };
 
   for (let i = 1; i < sortedTiles.length; i++) {
@@ -120,13 +118,22 @@ function computeLegalAnchors(board: BoardState, tilesById: Map<TileId, PlacedTil
     return [{
       id: "initial",
       attachmentPoint: { x: 0, y: 0 },
-      direction: "right", // Default direction doesn't matter much for first tile but 'right' is safe
-      openPip: 0, // Doesn't matter for first tile
+      direction: "right", 
+      openPip: 0,
     }];
   }
 
-  return board.openEnds.map(oe => {
-    const geom = tilesById.get(oe.tileId!)!;
-    return getAnchorOnTile(geom, oe.side, oe.pip);
-  });
+  const { up: upUnlocked, down: downUnlocked } = getSpinnerBranchUnlocks(board);
+
+  return board.openEnds
+    .filter(oe => {
+      if (oe.side === "up") return upUnlocked;
+      if (oe.side === "down") return downUnlocked;
+      return true;
+    })
+    .map(oe => {
+      const geom = tilesById.get(oe.tileId!)!;
+      return getAnchorOnTile(geom, oe.side, oe.pip);
+    });
 }
+
