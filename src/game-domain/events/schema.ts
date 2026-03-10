@@ -14,6 +14,7 @@ export const GAME_EVENT_SCHEMA_VERSION = 1 as const;
 
 export const GAME_EVENT_TYPES = [
   "GAME_STARTED",
+  "ROUND_STARTED",
   "TILE_PLAYED",
   "TILE_DRAWN",
   "TURN_PASSED",
@@ -54,10 +55,16 @@ export type GameStartedEvent = BaseGameEvent<
     targetScore: number;
     variant: GameVariant;
     players: readonly [PlayerSnapshot, PlayerSnapshot];
+    tileCatalog: readonly Tile[];
+  }>
+>;
+
+export type RoundStartedEvent = BaseGameEvent<
+  "ROUND_STARTED",
+  Readonly<{
     roundId: RoundId;
     roundNumber: number;
     startingPlayerId: PlayerId;
-    tileCatalog: readonly Tile[];
     handsByPlayerId: TileIdsByPlayerId;
     boneyardTileIds: readonly TileId[];
   }>
@@ -127,6 +134,7 @@ export type ForfeitEvent = BaseGameEvent<
 
 export type GameEvent =
   | GameStartedEvent
+  | RoundStartedEvent
   | TilePlayedEvent
   | TileDrawnEvent
   | TurnPassedEvent

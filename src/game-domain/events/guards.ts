@@ -19,6 +19,7 @@ import {
   type GameStartedEvent,
   type PlayerSnapshot,
   type RoundEndedEvent,
+  type RoundStartedEvent,
   type TileDrawnEvent,
   type TilePlayedEvent,
   type TurnPassedEvent,
@@ -155,10 +156,19 @@ const isGameStartedEvent = (value: unknown): value is GameStartedEvent => {
     isNonNegativeInteger(value.targetScore) &&
     isOneOf(value.variant, GAME_VARIANTS) &&
     isReadonlyTupleOfTwo(value.players, isPlayerSnapshot) &&
+    isReadonlyArrayOf(value.tileCatalog, isTile)
+  );
+};
+
+const isRoundStartedEvent = (value: unknown): value is RoundStartedEvent => {
+  if (!hasBaseEventShape(value) || value.type !== "ROUND_STARTED") {
+    return false;
+  }
+
+  return (
     isRoundId(value.roundId) &&
     isNonNegativeInteger(value.roundNumber) &&
     isPlayerId(value.startingPlayerId) &&
-    isReadonlyArrayOf(value.tileCatalog, isTile) &&
     isRecordOfReadonlyTileIds(value.handsByPlayerId) &&
     isReadonlyArrayOf(value.boneyardTileIds, isTileId)
   );
@@ -247,6 +257,7 @@ const isForfeitEvent = (value: unknown): value is ForfeitEvent => {
 
 export const isGameEvent = (value: unknown): value is GameEvent =>
   isGameStartedEvent(value) ||
+  isRoundStartedEvent(value) ||
   isTilePlayedEvent(value) ||
   isTileDrawnEvent(value) ||
   isTurnPassedEvent(value) ||

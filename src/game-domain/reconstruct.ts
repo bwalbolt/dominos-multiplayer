@@ -22,6 +22,7 @@ import type {
   GameEvent,
   GameStartedEvent,
   RoundEndedEvent,
+  RoundStartedEvent,
   TileDrawnEvent,
   TilePlayedEvent,
   TurnPassedEvent,
@@ -164,7 +165,7 @@ const updateHandState = (
 });
 
 const createInitialRoundState = (
-  event: GameStartedEvent,
+  event: RoundStartedEvent,
   players: GameParticipants,
 ): RoundState => {
   const handsByPlayerId = Object.fromEntries(
@@ -192,11 +193,10 @@ const createInitialGameState = (event: GameStartedEvent): GameState => {
     clonePlayerProfile(event.players[0]),
     clonePlayerProfile(event.players[1]),
   ];
-  const currentRound = createInitialRoundState(event, players);
   const playerStateById = Object.fromEntries(
     players.map((player) => [
       player.playerId,
-      createPlayerMatchState(player.playerId, currentRound.handsByPlayerId[player.playerId]),
+      createPlayerMatchState(player.playerId, createPlayerHandState(player.playerId, [])),
     ]),
   ) as Record<PlayerId, PlayerMatchState>;
 
@@ -214,13 +214,8 @@ const createInitialGameState = (event: GameStartedEvent): GameState => {
     },
     players,
     playerStateById,
-    currentRound,
-    turn: {
-      activePlayerId: event.startingPlayerId,
-      turnNumber: 1,
-      consecutivePasses: 0,
-      lastActionAt: event.occurredAt,
-    },
+    currentRound: null,
+    turn: null,
     winnerPlayerId: null,
   };
 };
@@ -239,6 +234,36 @@ const createInitialTileInstances = (
       ownerPlayerId: null,
       location: { kind: "boneyard" },
       isPlayable: false,
+    };
+  }
+  return byTileId;
+};
+
+const createTileInstancesForRound = (
+  tileCatalog: Record<TileId, Tile>,
+  event: RoundStartedEvent,
+): Record<TileId, TileInstance> => {
+  const byTileId: Record<TileId, TileInstance> = {} as Record<TileId, TileInstance>;
+
+  for (const tile of Object.values(tileCatalog)) {
+    byTileId[tile.id] = {
+      tile,
+      ownerPlayerId: null,
+      location: { kind: "boneyard" },
+      isPlayable: false,
+    };
+  }
+
+  for (const tileId of event.boneyardTileIds) {
+    const existing = byTileId[tileId];
+
+    if (!existing) {
+      continue;
+    }
+
+    byTileId[tileId] = {
+      ...existing,
+      location: { kind: "boneyard" },
     };
   }
 
@@ -293,6 +318,43 @@ const assertRoundActive = (
   }
 
   return game.currentRound;
+};
+
+const applyRoundStartedEvent = (
+  game: GameState,
+  event: RoundStartedEvent,
+): GameState => {
+  if (game.status !== "active") {
+    throw new Error("Cannot apply ROUND_STARTED after the game has ended.");
+  }
+
+  if (game.currentRound !== null && game.currentRound.endedAt === null) {
+    throw new Error("Cannot apply ROUND_STARTED while another round is still active.");
+  }
+
+  const currentRound = createInitialRoundState(event, game.players);
+  const playerStateById = Object.fromEntries(
+    game.players.map((player) => [
+      player.playerId,
+      {
+        ...game.playerStateById[player.playerId],
+        hand: currentRound.handsByPlayerId[player.playerId],
+      },
+    ]),
+  ) as Record<PlayerId, PlayerMatchState>;
+
+  return {
+    ...game,
+    currentRound,
+    playerStateById,
+    turn: {
+      activePlayerId: event.startingPlayerId,
+      turnNumber: 1,
+      consecutivePasses: 0,
+      lastActionAt: event.occurredAt,
+    },
+    winnerPlayerId: null,
+  };
 };
 
 const applyTilePlayedEvent = (
@@ -583,6 +645,10 @@ const applyGameEvent = (
   }
 
   if (event.type === "GAME_STARTED") {
+    if (accumulator.game !== null) {
+      throw new Error("Cannot apply multiple GAME_STARTED events to the same game.");
+    }
+
     const game = createInitialGameState(event);
 
     return {
@@ -598,6 +664,10 @@ const applyGameEvent = (
   let nextTileInstances = accumulator.tileInstances;
 
   switch (event.type) {
+    case "ROUND_STARTED":
+      nextGame = applyRoundStartedEvent(initializedGame, event);
+      nextTileInstances = createTileInstancesForRound(accumulator.tileCatalog, event);
+      break;
     case "TILE_PLAYED": {
       const result = applyTilePlayedEvent(
         initializedGame,
