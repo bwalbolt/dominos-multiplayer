@@ -1,22 +1,4 @@
 import type {
-  BoneyardState,
-  BoardState,
-  BoardOpenEnd,
-  GameParticipants,
-  GameState,
-  PlayerHandState,
-  PlayerMatchState,
-  PlayerProfile,
-  PlayerId,
-  ReconstructionState,
-  RoundResult,
-  RoundState,
-  Tile,
-  TileId,
-  TileInstance,
-  TurnState,
-} from "./types";
-import type {
   ForfeitEvent,
   GameEndedEvent,
   GameEvent,
@@ -27,6 +9,29 @@ import type {
   TilePlayedEvent,
   TurnPassedEvent,
 } from "./events/schema";
+import type {
+  BoardOpenEnd,
+  BoardState,
+  BoneyardState,
+  GameParticipants,
+  GameState,
+  PlayerHandState,
+  PlayerId,
+  PlayerMatchState,
+  PlayerProfile,
+  ReconstructionState,
+  RoundResult,
+  RoundState,
+  Tile,
+  TileId,
+  TileInstance,
+  TurnState,
+} from "./types";
+import {
+  calculateFivesBoardScore,
+  calculateHandPipTotal,
+  evaluateFivesLegalMoves,
+} from "./variants/fives";
 
 type ReconstructionAccumulator = {
   game: GameState | null;
@@ -54,11 +59,12 @@ const createEmptyBoardState = (): BoardState => ({
 const createPlayerHandState = (
   playerId: PlayerId,
   tileIds: readonly TileId[],
+  tileCatalog: Record<TileId, Tile>,
 ): PlayerHandState => ({
   playerId,
   tileIds: [...tileIds],
   handCount: tileIds.length,
-  pipTotal: 0,
+  pipTotal: calculateHandPipTotal({ tileIds } as PlayerHandState, tileCatalog),
   hasPlayableTile: false,
 });
 
@@ -69,7 +75,7 @@ const createPlayerMatchState = (
   playerId,
   score: 0,
   roundsWon: 0,
-  isConnected: false,
+  isConnected: true, // Default to connected if they are in the match
   hand,
 });
 
@@ -84,13 +90,19 @@ const clonePlayerProfile = (player: PlayerProfile): PlayerProfile => ({
   displayName: player.displayName,
 });
 
-const sortOpenEnds = (openEnds: readonly BoardOpenEnd[]): readonly BoardOpenEnd[] =>
+const sortOpenEnds = (
+  openEnds: readonly BoardOpenEnd[],
+): readonly BoardOpenEnd[] =>
   [...openEnds].sort(
     (left, right) =>
-      CHAIN_SIDE_ORDER.indexOf(left.side) - CHAIN_SIDE_ORDER.indexOf(right.side),
+      CHAIN_SIDE_ORDER.indexOf(left.side) -
+      CHAIN_SIDE_ORDER.indexOf(right.side),
   );
 
-const createSpinnerOpenEnds = (tileId: TileId, pip: Tile["sideA"]): readonly BoardOpenEnd[] =>
+const createSpinnerOpenEnds = (
+  tileId: TileId,
+  pip: Tile["sideA"],
+): readonly BoardOpenEnd[] =>
   sortOpenEnds(
     CHAIN_SIDE_ORDER.map((side) => ({
       side,
@@ -129,7 +141,9 @@ const upsertOpenEnd = (
   openEnds: readonly BoardOpenEnd[],
   nextOpenEnd: BoardOpenEnd,
 ): readonly BoardOpenEnd[] => {
-  const existingIndex = openEnds.findIndex((openEnd) => openEnd.side === nextOpenEnd.side);
+  const existingIndex = openEnds.findIndex(
+    (openEnd) => openEnd.side === nextOpenEnd.side,
+  );
 
   if (existingIndex === -1) {
     return sortOpenEnds([...openEnds, nextOpenEnd]);
@@ -151,27 +165,35 @@ const switchActivePlayer = (
   players: GameParticipants,
   activePlayerId: PlayerId,
 ): PlayerId =>
-  players[0].playerId === activePlayerId ? players[1].playerId : players[0].playerId;
+  players[0].playerId === activePlayerId
+    ? players[1].playerId
+    : players[0].playerId;
 
 const updateHandState = (
   hand: PlayerHandState,
   tileIds: readonly TileId[],
+  tileCatalog: Record<TileId, Tile>,
 ): PlayerHandState => ({
   ...hand,
   tileIds: [...tileIds],
   handCount: tileIds.length,
-  pipTotal: 0,
-  hasPlayableTile: false,
+  pipTotal: calculateHandPipTotal({ tileIds } as PlayerHandState, tileCatalog),
+  hasPlayableTile: false, // will be updated in enrichDerivedState
 });
 
 const createInitialRoundState = (
   event: RoundStartedEvent,
   players: GameParticipants,
+  tileCatalog: Record<TileId, Tile>,
 ): RoundState => {
   const handsByPlayerId = Object.fromEntries(
     players.map((player) => [
       player.playerId,
-      createPlayerHandState(player.playerId, event.handsByPlayerId[player.playerId] ?? []),
+      createPlayerHandState(
+        player.playerId,
+        event.handsByPlayerId[player.playerId] ?? [],
+        tileCatalog,
+      ),
     ]),
   ) as Record<PlayerId, PlayerHandState>;
 
@@ -193,10 +215,14 @@ const createInitialGameState = (event: GameStartedEvent): GameState => {
     clonePlayerProfile(event.players[0]),
     clonePlayerProfile(event.players[1]),
   ];
+  const tileCatalog = createTileCatalog(event.tileCatalog);
   const playerStateById = Object.fromEntries(
     players.map((player) => [
       player.playerId,
-      createPlayerMatchState(player.playerId, createPlayerHandState(player.playerId, [])),
+      createPlayerMatchState(
+        player.playerId,
+        createPlayerHandState(player.playerId, [], tileCatalog),
+      ),
     ]),
   ) as Record<PlayerId, PlayerMatchState>;
 
@@ -220,13 +246,21 @@ const createInitialGameState = (event: GameStartedEvent): GameState => {
   };
 };
 
-const createTileCatalog = (tileCatalog: readonly Tile[]): Record<TileId, Tile> =>
-  Object.fromEntries(tileCatalog.map((tile) => [tile.id, tile])) as Record<TileId, Tile>;
+const createTileCatalog = (
+  tileCatalog: readonly Tile[],
+): Record<TileId, Tile> =>
+  Object.fromEntries(tileCatalog.map((tile) => [tile.id, tile])) as Record<
+    TileId,
+    Tile
+  >;
 
 const createInitialTileInstances = (
   event: GameStartedEvent,
 ): Record<TileId, TileInstance> => {
-  const byTileId: Record<TileId, TileInstance> = {} as Record<TileId, TileInstance>;
+  const byTileId: Record<TileId, TileInstance> = {} as Record<
+    TileId,
+    TileInstance
+  >;
 
   for (const tile of event.tileCatalog) {
     byTileId[tile.id] = {
@@ -243,7 +277,10 @@ const createTileInstancesForRound = (
   tileCatalog: Record<TileId, Tile>,
   event: RoundStartedEvent,
 ): Record<TileId, TileInstance> => {
-  const byTileId: Record<TileId, TileInstance> = {} as Record<TileId, TileInstance>;
+  const byTileId: Record<TileId, TileInstance> = {} as Record<
+    TileId,
+    TileInstance
+  >;
 
   for (const tile of Object.values(tileCatalog)) {
     byTileId[tile.id] = {
@@ -309,10 +346,7 @@ const assertGameInitialized = (
   return game;
 };
 
-const assertRoundActive = (
-  game: GameState,
-  event: GameEvent,
-): RoundState => {
+const assertRoundActive = (game: GameState, event: GameEvent): RoundState => {
   if (game.currentRound === null) {
     throw new Error(`Cannot apply ${event.type} without an active round.`);
   }
@@ -323,16 +357,23 @@ const assertRoundActive = (
 const applyRoundStartedEvent = (
   game: GameState,
   event: RoundStartedEvent,
+  tileCatalog: Record<TileId, Tile>,
 ): GameState => {
   if (game.status !== "active") {
     throw new Error("Cannot apply ROUND_STARTED after the game has ended.");
   }
 
   if (game.currentRound !== null && game.currentRound.endedAt === null) {
-    throw new Error("Cannot apply ROUND_STARTED while another round is still active.");
+    throw new Error(
+      "Cannot apply ROUND_STARTED while another round is still active.",
+    );
   }
 
-  const currentRound = createInitialRoundState(event, game.players);
+  const currentRound = createInitialRoundState(
+    event,
+    game.players,
+    tileCatalog,
+  );
   const playerStateById = Object.fromEntries(
     game.players.map((player) => [
       player.playerId,
@@ -360,6 +401,7 @@ const applyRoundStartedEvent = (
 const applyTilePlayedEvent = (
   game: GameState,
   tileInstances: Record<TileId, TileInstance>,
+  tileCatalog: Record<TileId, Tile>,
   event: TilePlayedEvent,
 ): { game: GameState; tileInstances: Record<TileId, TileInstance> } => {
   const currentRound = assertRoundActive(game, event);
@@ -375,7 +417,9 @@ const applyTilePlayedEvent = (
     throw new Error(`Unknown player ${event.playerId} in TILE_PLAYED.`);
   }
 
-  const nextHandTileIds = activeHand.tileIds.filter((tileId) => tileId !== event.tileId);
+  const nextHandTileIds = activeHand.tileIds.filter(
+    (tileId) => tileId !== event.tileId,
+  );
   const playedTile = {
     tile: tileInstance.tile,
     playedBy: event.playerId,
@@ -392,7 +436,9 @@ const applyTilePlayedEvent = (
       ? {
           ...currentRound.board,
           spinnerTileId:
-            tileInstance.tile.sideA === tileInstance.tile.sideB ? tileInstance.tile.id : null,
+            tileInstance.tile.sideA === tileInstance.tile.sideB
+              ? tileInstance.tile.id
+              : null,
           openEnds: getInitialOpenEndsForTile(
             tileInstance.tile,
             event.side,
@@ -410,9 +456,16 @@ const applyTilePlayedEvent = (
           tiles: boardTiles,
         };
   const boardOrder = getBoardOrder(currentRound.board, event.side);
+  // Calculate scoring if variant is Fives
+  let nextScore = game.playerStateById[event.playerId].score;
+  if (game.metadata.variant === "fives") {
+    const boardScore = calculateFivesBoardScore(board);
+    nextScore += boardScore;
+  }
+
   const handsByPlayerId: Record<PlayerId, PlayerHandState> = {
     ...currentRound.handsByPlayerId,
-    [event.playerId]: updateHandState(activeHand, nextHandTileIds),
+    [event.playerId]: updateHandState(activeHand, nextHandTileIds, tileCatalog),
   };
   const nextTurn: TurnState | null = game.turn
     ? {
@@ -423,23 +476,26 @@ const applyTilePlayedEvent = (
       }
     : null;
 
-  return {
-    game: {
-      ...game,
-      currentRound: {
-        ...currentRound,
-        board,
-        handsByPlayerId,
-      },
-      playerStateById: {
-        ...game.playerStateById,
-        [event.playerId]: {
-          ...game.playerStateById[event.playerId],
-          hand: handsByPlayerId[event.playerId],
-        },
-      },
-      turn: nextTurn,
+  const nextGame: GameState = {
+    ...game,
+    currentRound: {
+      ...currentRound,
+      board,
+      handsByPlayerId,
     },
+    playerStateById: {
+      ...game.playerStateById,
+      [event.playerId]: {
+        ...game.playerStateById[event.playerId],
+        hand: handsByPlayerId[event.playerId],
+        score: nextScore,
+      },
+    },
+    turn: nextTurn,
+  };
+
+  return {
+    game: nextGame,
     tileInstances: {
       ...tileInstances,
       [event.tileId]: {
@@ -458,6 +514,7 @@ const applyTilePlayedEvent = (
 const applyTileDrawnEvent = (
   game: GameState,
   tileInstances: Record<TileId, TileInstance>,
+  tileCatalog: Record<TileId, Tile>,
   event: TileDrawnEvent,
 ): { game: GameState; tileInstances: Record<TileId, TileInstance> } => {
   const currentRound = assertRoundActive(game, event);
@@ -474,7 +531,7 @@ const applyTileDrawnEvent = (
   }
 
   const nextHandTileIds = [...activeHand.tileIds, event.tileId];
-  const nextHand = updateHandState(activeHand, nextHandTileIds);
+  const nextHand = updateHandState(activeHand, nextHandTileIds, tileCatalog);
 
   const handsByPlayerId: Record<PlayerId, PlayerHandState> = {
     ...currentRound.handsByPlayerId,
@@ -487,7 +544,9 @@ const applyTileDrawnEvent = (
       currentRound: {
         ...currentRound,
         boneyard: createBoneyardState(
-          currentRound.boneyard.remainingTileIds.filter((tileId) => tileId !== event.tileId),
+          currentRound.boneyard.remainingTileIds.filter(
+            (tileId) => tileId !== event.tileId,
+          ),
         ),
         handsByPlayerId,
       },
@@ -633,6 +692,138 @@ const applyGameEvent = (
   accumulator: ReconstructionAccumulator,
   event: GameEvent,
 ): ReconstructionAccumulator => {
+  const result = applyGameEventInternal(accumulator, event);
+
+  // Update playability hints and other derived state (like hasPlayableTile)
+  if (result.game) {
+    const enriched = enrichDerivedState(
+      result.game,
+      result.tileInstances,
+      result.tileCatalog,
+    );
+    result.game = enriched.game;
+    result.tileInstances = enriched.tileInstances;
+  }
+
+  return {
+    ...result,
+    game: result.game ? updateMetadata(result.game, event) : null,
+    eventCount: accumulator.eventCount + 1,
+  };
+};
+
+const enrichDerivedState = (
+  game: GameState,
+  tileInstances: Record<TileId, TileInstance>,
+  tileCatalog: Record<TileId, Tile>,
+): { game: GameState; tileInstances: Record<TileId, TileInstance> } => {
+  // 1. Reset all tiles to not playable initially
+  const nextInstances = { ...tileInstances };
+  for (const tileId of Object.keys(nextInstances) as TileId[]) {
+    nextInstances[tileId] = {
+      ...nextInstances[tileId],
+      isPlayable: false,
+    };
+  }
+
+  // Helper to update hasPlayableTile field on all players' hands in the game/round state
+  const resetHasPlayableTile = (gameState: GameState): GameState => {
+    const nextPlayerStateById = { ...gameState.playerStateById };
+    for (const pid of Object.keys(nextPlayerStateById) as PlayerId[]) {
+      nextPlayerStateById[pid] = {
+        ...nextPlayerStateById[pid],
+        hand: { ...nextPlayerStateById[pid].hand, hasPlayableTile: false },
+      };
+    }
+
+    let nextRound = gameState.currentRound;
+    if (nextRound) {
+      const nextHandsByPlayerId = { ...nextRound.handsByPlayerId };
+      for (const pid of Object.keys(nextHandsByPlayerId) as PlayerId[]) {
+        nextHandsByPlayerId[pid] = {
+          ...nextHandsByPlayerId[pid],
+          hasPlayableTile: false,
+        };
+      }
+      nextRound = { ...nextRound, handsByPlayerId: nextHandsByPlayerId };
+    }
+
+    return {
+      ...gameState,
+      playerStateById: nextPlayerStateById,
+      currentRound: nextRound,
+    };
+  };
+
+  let nextGame = resetHasPlayableTile(game);
+
+  if (!game.turn || !game.currentRound || game.status !== "active") {
+    return { game: nextGame, tileInstances: nextInstances };
+  }
+
+  const activePlayerId = game.turn.activePlayerId;
+  const activeHand = game.currentRound.handsByPlayerId[activePlayerId];
+
+  if (!activeHand) return { game: nextGame, tileInstances: nextInstances };
+
+  const legalMoves = evaluateFivesLegalMoves({
+    board: game.currentRound.board,
+    handTileIds: activeHand.tileIds,
+    tileCatalog,
+    isOpeningMove: game.currentRound.board.tiles.length === 0,
+  });
+
+  const playableTileIds = new Set(legalMoves.moves.map((m) => m.tileId));
+
+  // Update tile instances isPlayable
+  for (const tileId of Object.keys(nextInstances) as TileId[]) {
+    nextInstances[tileId] = {
+      ...nextInstances[tileId],
+      isPlayable: playableTileIds.has(tileId),
+    };
+  }
+
+  // Update hand hasPlayableTile if there are moves
+  if (playableTileIds.size > 0) {
+    const nextPlayerStateById = { ...nextGame.playerStateById };
+    nextPlayerStateById[activePlayerId] = {
+      ...nextPlayerStateById[activePlayerId],
+      hand: {
+        ...nextPlayerStateById[activePlayerId].hand,
+        hasPlayableTile: true,
+      },
+    };
+
+    if (nextGame.currentRound) {
+      const nextHandsByPlayerId = { ...nextGame.currentRound.handsByPlayerId };
+      nextHandsByPlayerId[activePlayerId] = {
+        ...nextHandsByPlayerId[activePlayerId],
+        hasPlayableTile: true,
+      };
+      nextGame = {
+        ...nextGame,
+        playerStateById: nextPlayerStateById,
+        currentRound: {
+          ...nextGame.currentRound,
+          handsByPlayerId: nextHandsByPlayerId,
+        },
+      };
+    } else {
+      nextGame = { ...nextGame, playerStateById: nextPlayerStateById };
+    }
+  }
+
+  return { game: nextGame, tileInstances: nextInstances };
+};
+
+const applyGameEventInternal = (
+  accumulator: ReconstructionAccumulator,
+  event: GameEvent,
+): {
+  game: GameState | null;
+  tileCatalog: Record<TileId, Tile>;
+  tileInstances: Record<TileId, TileInstance>;
+} => {
   if (accumulator.game !== null && accumulator.game.gameId !== event.gameId) {
     throw new Error("All events must belong to the same game.");
   }
@@ -641,12 +832,16 @@ const applyGameEvent = (
     accumulator.game !== null &&
     event.eventSeq <= accumulator.game.metadata.lastEventSeq
   ) {
-    throw new Error("Events must be applied in strictly increasing event_seq order.");
+    throw new Error(
+      "Events must be applied in strictly increasing event_seq order.",
+    );
   }
 
   if (event.type === "GAME_STARTED") {
     if (accumulator.game !== null) {
-      throw new Error("Cannot apply multiple GAME_STARTED events to the same game.");
+      throw new Error(
+        "Cannot apply multiple GAME_STARTED events to the same game.",
+      );
     }
 
     const game = createInitialGameState(event);
@@ -655,7 +850,6 @@ const applyGameEvent = (
       game,
       tileCatalog: createTileCatalog(event.tileCatalog),
       tileInstances: createInitialTileInstances(event),
-      eventCount: accumulator.eventCount + 1,
     };
   }
 
@@ -665,13 +859,21 @@ const applyGameEvent = (
 
   switch (event.type) {
     case "ROUND_STARTED":
-      nextGame = applyRoundStartedEvent(initializedGame, event);
-      nextTileInstances = createTileInstancesForRound(accumulator.tileCatalog, event);
+      nextGame = applyRoundStartedEvent(
+        initializedGame,
+        event,
+        accumulator.tileCatalog,
+      );
+      nextTileInstances = createTileInstancesForRound(
+        accumulator.tileCatalog,
+        event,
+      );
       break;
     case "TILE_PLAYED": {
       const result = applyTilePlayedEvent(
         initializedGame,
         accumulator.tileInstances,
+        accumulator.tileCatalog,
         event,
       );
       nextGame = result.game;
@@ -682,6 +884,7 @@ const applyGameEvent = (
       const result = applyTileDrawnEvent(
         initializedGame,
         accumulator.tileInstances,
+        accumulator.tileCatalog,
         event,
       );
       nextGame = result.game;
@@ -703,10 +906,9 @@ const applyGameEvent = (
   }
 
   return {
-    game: updateMetadata(nextGame, event),
+    game: nextGame,
     tileCatalog: accumulator.tileCatalog,
     tileInstances: nextTileInstances,
-    eventCount: accumulator.eventCount + 1,
   };
 };
 
@@ -716,8 +918,8 @@ const toStableValue = (value: unknown): unknown => {
   }
 
   if (value && typeof value === "object") {
-    const entries = Object.entries(value as Record<string, unknown>).sort(([left], [right]) =>
-      left.localeCompare(right),
+    const entries = Object.entries(value as Record<string, unknown>).sort(
+      ([left], [right]) => left.localeCompare(right),
     );
 
     return Object.fromEntries(
