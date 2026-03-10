@@ -27,6 +27,8 @@ export type LayoutOrientation = "up" | "right" | "down" | "left";
 export type LayoutAnchor = {
   /** Uniquely identifies this anchor (e.g. "left", "right", "spinner-up") */
   readonly id: string;
+  /** The tile this anchor belongs to (the tile being chained off of). Null for initial opening play. */
+  readonly ownerTileId: TileId | null;
   /** The point where the new tile will touch the existing tile */
   readonly attachmentPoint: Point;
   /** The direction in which the chain is growing from this anchor */
@@ -59,4 +61,16 @@ export type PlacedTileGeometry = {
 export type BoardGeometry = {
   readonly placedTiles: readonly PlacedTileGeometry[];
   readonly anchors: readonly LayoutAnchor[];
+};
+
+/**
+ * Result of a snap resolution
+ */
+export type SnapResolution = {
+  /** The anchor that was snapped to, or null if no anchor met the threshold */
+  readonly anchor: LayoutAnchor | null;
+  /** Distance in board space to the anchor's attachment point */
+  readonly distance: number;
+  /** The tile that should be highlighted as the drop target, if any */
+  readonly highlightTileId: TileId | null;
 };

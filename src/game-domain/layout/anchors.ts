@@ -106,6 +106,7 @@ function getAnchorOnTile(geom: PlacedTileGeometry, side: ChainSide, openPip: Dom
   
   return {
     id: `${geom.tileId}-${side}`,
+    ownerTileId: geom.tileId,
     attachmentPoint,
     direction: side,
     openPip,
@@ -117,6 +118,7 @@ function computeLegalAnchors(board: BoardState, tilesById: Map<TileId, PlacedTil
   if (board.tiles.length === 0) {
     return [{
       id: "initial",
+      ownerTileId: null,
       attachmentPoint: { x: 0, y: 0 },
       direction: "right", 
       openPip: 0,
