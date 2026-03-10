@@ -14,6 +14,7 @@ export type GameVariant = "fives";
 export type GameStatus = "pending" | "active" | "completed" | "forfeited";
 export type RoundStatus = "setup" | "active" | "blocked" | "completed";
 export type ChainSide = "left" | "right" | "up" | "down";
+export type TileSide = "sideA" | "sideB";
 
 export type Tile = Readonly<{
   id: TileId;
@@ -143,3 +144,49 @@ export type ValidationContext = Readonly<{
   expectedEventSeq: number;
   reconstructed: ReconstructionState;
 }>;
+
+export type FivesSpinnerBranchState = "open" | "closed";
+
+export type FivesSpinnerBranchStatus = Readonly<{
+  left: FivesSpinnerBranchState;
+  right: FivesSpinnerBranchState;
+  up: FivesSpinnerBranchState;
+  down: FivesSpinnerBranchState;
+}>;
+
+export type FivesLegalMove = Readonly<{
+  tileId: TileId;
+  side: ChainSide;
+  inwardTileSide: TileSide;
+  openPipFacingOutward: DominoPip;
+}>;
+
+export type FivesMoveIntent = Readonly<{
+  tileId: TileId;
+  side: ChainSide;
+  openPipFacingOutward: DominoPip;
+}>;
+
+export type ValidationFailure<TCode extends string> = Readonly<{
+  ok: false;
+  code: TCode;
+  message: string;
+}>;
+
+export type ValidationSuccess<TResult> = Readonly<{
+  ok: true;
+  value: TResult;
+}>;
+
+export type ValidationResult<TResult, TCode extends string> =
+  | ValidationSuccess<TResult>
+  | ValidationFailure<TCode>;
+
+export type FivesMoveValidationErrorCode =
+  | "round_not_active"
+  | "tile_not_in_hand"
+  | "tile_not_found"
+  | "opening_double_required"
+  | "no_legal_moves"
+  | "illegal_side"
+  | "illegal_orientation";
