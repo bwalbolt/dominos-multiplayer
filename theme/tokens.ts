@@ -180,6 +180,22 @@ export const spacing = {
   104: 104,
 } as const;
 
+export const domino = {
+  width: 56,
+  height: 112,
+  borderRadius: 8,
+  pipSize: 10,
+  dividerOpacity: 0.24,
+  bottomEdgeHeight: 24,
+  colors: {
+    body: "#F8F6F7",
+    pips: "#45363A",
+    bottomEdge: "#816A70",
+    bottomEdgeStroke: "#BCBBBC",
+    divider: colors.black24,
+  },
+} as const;
+
 // Semantic token mappings
 export const siteGutter = spacing[24];
 export const defaultBorderRadius = spacing[8];
@@ -194,4 +210,5 @@ export const designTokens = {
   siteGutter,
   defaultBorderRadius,
   pillBorderRadius,
+  domino,
 } as const;
