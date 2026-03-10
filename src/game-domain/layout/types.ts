@@ -74,3 +74,41 @@ export type SnapResolution = {
   /** The tile that should be highlighted as the drop target, if any */
   readonly highlightTileId: TileId | null;
 };
+/**
+ * Axis-aligned bounding box
+ */
+export type Rect = {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+};
+
+/**
+ * Camera state for rendering the board
+ */
+export type CameraTransform = {
+  readonly scale: number;
+  readonly translateX: number;
+  readonly translateY: number;
+};
+
+/**
+ * Focus hint for camera transitions
+ */
+export type CameraFocusTarget = {
+  /** The world-space point to prioritize */
+  readonly center: Point;
+  /** Optional tile ID associated with the focus */
+  readonly tileId?: TileId;
+  /** Why this target is being focused */
+  readonly type: "last-move" | "turn-change" | "default";
+};
+
+/**
+ * Combined viewport state output
+ */
+export type ViewportState = {
+  readonly transform: CameraTransform;
+  readonly focusTarget: CameraFocusTarget | null;
+};
