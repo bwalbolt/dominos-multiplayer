@@ -1,7 +1,7 @@
 import type {
   BoardState,
   FivesLegalMove,
-  FivesMoveIntent,
+  FivesMoveSelection,
   FivesMoveValidationErrorCode,
   Tile,
   TileId,
@@ -16,7 +16,7 @@ type ValidateFivesMoveInput = Readonly<{
   board: BoardState;
   handTileIds: readonly TileId[];
   tileCatalog: Readonly<Record<TileId, Tile>>;
-  intent: FivesMoveIntent;
+  intent: FivesMoveSelection;
   isOpeningMove: boolean;
 }>;
 

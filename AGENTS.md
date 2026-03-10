@@ -59,3 +59,11 @@ We use a **Client-Server Architecture** with a **Backend-for-Frontend (BFF)** pa
 5. **No Scope Creep**: Refer to the "MVP Boundary" in the PRD. Do not implement out-of-scope features like ranked mode, 4-player, chat, or IAP unless explicitly instructed.
 
 By following these rules, you ensure that Dominoes Multiplayer remains robust, scalable, and visually premium.
+
+## 7. Standard Development Commands
+
+Always use these standard scripts for development, validation, and testing:
+- **Dev Server**: `npm run start` (starts the Expo development server)
+- **Linting**: `npm run lint` (runs ESLint via `expo lint`)
+- **Testing**: `npm test` (runs the Jest test suite)
+- **Direct Execution**: Use `npx` for one-off commands (e.g., `npx jest --watch`) to ensure you use the versioned binaries in the project.

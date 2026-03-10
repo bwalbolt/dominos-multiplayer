@@ -164,7 +164,7 @@ export const getFixtureTile = (
 ): Tile => FIXTURE_TILE_CATALOG_BY_ID[getFixtureTileId(sideA, sideB)];
 
 export const getFixtureTileIds = (
-  ...tiles: ReadonlyArray<readonly [Tile["sideA"], Tile["sideB"]]>
+  ...tiles: readonly (readonly [Tile["sideA"], Tile["sideB"]])[]
 ): readonly TileId[] => tiles.map(([sideA, sideB]) => getFixtureTileId(sideA, sideB));
 
 export const createHandsByPlayerId = (

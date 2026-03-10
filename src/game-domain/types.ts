@@ -7,6 +7,8 @@ export type PlayerId = Brand<string, "PlayerId">;
 export type TileId = Brand<string, "TileId">;
 export type RoundId = Brand<string, "RoundId">;
 export type EventId = Brand<string, "EventId">;
+export type MoveIntentIdempotencyKey = Brand<string, "MoveIntentIdempotencyKey">;
+export type MoveIntentAnchorId = Brand<string, "MoveIntentAnchorId">;
 
 export type DominoPip = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 export type PlayerPosition = "player_1" | "player_2";
@@ -161,7 +163,7 @@ export type FivesLegalMove = Readonly<{
   openPipFacingOutward: DominoPip;
 }>;
 
-export type FivesMoveIntent = Readonly<{
+export type FivesMoveSelection = Readonly<{
   tileId: TileId;
   side: ChainSide;
   openPipFacingOutward: DominoPip;
