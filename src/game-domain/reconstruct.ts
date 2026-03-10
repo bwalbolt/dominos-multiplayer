@@ -98,6 +98,32 @@ const createSpinnerOpenEnds = (tileId: TileId, pip: Tile["sideA"]): readonly Boa
     })),
   );
 
+const getInitialOpenEndsForTile = (
+  tile: Tile,
+  side: TilePlayedEvent["side"],
+  openPipFacingOutward: TilePlayedEvent["openPipFacingOutward"],
+): readonly BoardOpenEnd[] => {
+  if (tile.sideA === tile.sideB) {
+    return createSpinnerOpenEnds(tile.id, openPipFacingOutward);
+  }
+
+  const inwardFacingPip =
+    tile.sideA === openPipFacingOutward ? tile.sideB : tile.sideA;
+
+  return sortOpenEnds([
+    {
+      side,
+      pip: openPipFacingOutward,
+      tileId: tile.id,
+    },
+    {
+      side: side === "left" ? "right" : "left",
+      pip: inwardFacingPip,
+      tileId: tile.id,
+    },
+  ]);
+};
+
 const upsertOpenEnd = (
   openEnds: readonly BoardOpenEnd[],
   nextOpenEnd: BoardOpenEnd,
@@ -305,21 +331,11 @@ const applyTilePlayedEvent = (
           ...currentRound.board,
           spinnerTileId:
             tileInstance.tile.sideA === tileInstance.tile.sideB ? tileInstance.tile.id : null,
-          openEnds:
-            tileInstance.tile.sideA === tileInstance.tile.sideB
-              ? createSpinnerOpenEnds(tileInstance.tile.id, event.openPipFacingOutward)
-              : sortOpenEnds([
-                  {
-                    side: "left",
-                    pip: event.openPipFacingOutward,
-                    tileId: tileInstance.tile.id,
-                  },
-                  {
-                    side: "right",
-                    pip: event.openPipFacingOutward,
-                    tileId: tileInstance.tile.id,
-                  },
-                ]),
+          openEnds: getInitialOpenEndsForTile(
+            tileInstance.tile,
+            event.side,
+            event.openPipFacingOutward,
+          ),
           tiles: boardTiles,
         }
       : {
