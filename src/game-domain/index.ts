@@ -2,6 +2,7 @@ export * from "./events/guards";
 export * from "./events/schema";
 export * from "./intent";
 export * from "./move-intent";
+export * from "./network";
 export * from "./presentation/tile-face";
 export * from "./reconstruct";
 export * from "./types";
