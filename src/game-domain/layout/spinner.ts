@@ -35,10 +35,14 @@ export function getSpinnerBranchUnlocks(board: BoardState): {
  */
 export function getBranchRootId(board: BoardState, side: ChainSide): TileId | null {
   if (board.tiles.length === 0) return null;
-  
+
   if (side === "up" || side === "down") {
     return board.spinnerTileId;
   }
-  
-  return board.tiles[0].tile.id;
+
+  const rootTile = board.tiles.reduce((earliestTile, tile) =>
+    tile.placedAtSeq < earliestTile.placedAtSeq ? tile : earliestTile,
+  );
+
+  return rootTile.tile.id;
 }
