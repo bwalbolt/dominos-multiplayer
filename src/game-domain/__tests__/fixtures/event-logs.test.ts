@@ -44,9 +44,9 @@ describe("fixture event logs", () => {
     expect(state.game?.currentRound?.result).toEqual({
       winnerPlayerId: "player-fixture-001",
       reason: "blocked",
-      scoreAwarded: 5,
+      scoreAwarded: 0,
     });
-    expect(state.game?.playerStateById[FIXTURE_IDS.playerOneId]?.score).toBe(5);
+    expect(state.game?.playerStateById[FIXTURE_IDS.playerOneId]?.score).toBe(0);
     expect(state.game?.turn).toBeNull();
   });
 

@@ -108,6 +108,14 @@ describe("Reconstruction Pipeline", () => {
   });
 
   it("should handle round resolution and authoritative score sync", () => {
+    const roundStartedForDomino: RoundStartedEvent = {
+      ...roundStarted,
+      handsByPlayerId: {
+        [p1]: ["tile-5-5" as TileId],
+        [p2]: ["tile-6-6" as TileId],
+      },
+    };
+
     const tilePlayed: TilePlayedEvent = {
       eventId: "ev-3" as EventId,
       gameId,
@@ -142,7 +150,7 @@ describe("Reconstruction Pipeline", () => {
 
     const state = reconstructGameState([
       gameStarted,
-      roundStarted,
+      roundStartedForDomino,
       tilePlayed,
       roundEnded,
     ]);

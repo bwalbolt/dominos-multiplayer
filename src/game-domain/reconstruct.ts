@@ -31,6 +31,7 @@ import {
   calculateFivesBoardScore,
   calculateHandPipTotal,
   evaluateFivesLegalMoves,
+  validateFivesRoundEndedEvent,
 } from "./variants/fives";
 
 type ReconstructionAccumulator = {
@@ -592,9 +593,22 @@ const applyTurnPassedEvent = (
 
 const applyRoundEndedEvent = (
   game: GameState,
+  tileCatalog: Record<TileId, Tile>,
   event: RoundEndedEvent,
 ): GameState => {
   const currentRound = assertRoundActive(game, event);
+  if (game.metadata.variant === "fives") {
+    const validation = validateFivesRoundEndedEvent({
+      game,
+      event,
+      tileCatalog,
+    });
+
+    if (!validation.ok) {
+      throw new Error(validation.message);
+    }
+  }
+
   const nextPlayerStateById: Record<PlayerId, PlayerMatchState> = {
     ...game.playerStateById,
   };
@@ -895,7 +909,11 @@ const applyGameEventInternal = (
       nextGame = applyTurnPassedEvent(initializedGame, event);
       break;
     case "ROUND_ENDED":
-      nextGame = applyRoundEndedEvent(initializedGame, event);
+      nextGame = applyRoundEndedEvent(
+        initializedGame,
+        accumulator.tileCatalog,
+        event,
+      );
       break;
     case "GAME_ENDED":
       nextGame = applyGameEndedEvent(initializedGame, event);

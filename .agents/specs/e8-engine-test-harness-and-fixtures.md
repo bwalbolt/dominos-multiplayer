@@ -20,7 +20,7 @@ Create a Vitest harness for rules, reconstruction, layout, viewport, and policy 
 
 **Patterns to follow:**
 
-- Vitest unit tests for pure domain logic.
+- Jest unit tests for pure domain logic.
 - Deterministic fixtures that can be replayed in any environment.
 - Explicit unhappy-path cases (illegal moves, invalid anchors, expired turn).
 
