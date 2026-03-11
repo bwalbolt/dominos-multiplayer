@@ -11,18 +11,6 @@ import type {
   TileId,
 } from "./types";
 
-export type {
-  ChainSide,
-  DominoPip,
-  FivesMoveValidationErrorCode,
-  GameId,
-  MoveIntentAnchorId,
-  MoveIntentIdempotencyKey,
-  PlayerId,
-  RoundId,
-  TileId,
-};
-
 export const MOVE_INTENT_KINDS = ["play_tile"] as const;
 
 export type MoveIntentKind = (typeof MOVE_INTENT_KINDS)[number];

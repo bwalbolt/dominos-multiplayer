@@ -2,9 +2,9 @@ import type { GameEvent, TilePlayedEvent } from "../events/schema";
 import type {
   MoveIntent,
   MoveIntentAcceptedResult,
-  MoveIntentIdempotencyKey,
   MoveIntentRejectedResult,
 } from "../move-intent";
+import type { MoveIntentIdempotencyKey } from "../types";
 
 export type SubmitMoveRequest = Readonly<{
   intent: MoveIntent;
@@ -34,4 +34,3 @@ export type SubmitMoveResponse =
 export const getSubmitMoveResponseIdempotencyKey = (
   response: SubmitMoveResponse,
 ): MoveIntentIdempotencyKey => response.idempotencyKey;
-

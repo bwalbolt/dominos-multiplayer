@@ -1,7 +1,6 @@
 import type { TilePlayedEvent } from "../../events/schema";
-import type { MoveIntentIdempotencyKey } from "../../move-intent";
 import { getReconstructionHashFromEvents } from "../../reconstruct";
-import type { EventId } from "../../types";
+import type { EventId, MoveIntentIdempotencyKey } from "../../types";
 import { FIXTURE_EVENT_LOGS } from "../../__tests__/fixtures/event-logs";
 import {
   FIXTURE_IDS,
