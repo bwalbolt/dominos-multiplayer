@@ -7,6 +7,9 @@ export * from "./presentation/tile-face";
 export * from "./reconstruct";
 export * from "./types";
 export * from "./variants";
+export * from "./local-session";
+export * from "./util/random";
+export * from "./util/tiles";
 export {
   MOVE_INTENT_FAILURE_CODES,
   MOVE_INTENT_KINDS,
