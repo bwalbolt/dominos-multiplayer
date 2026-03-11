@@ -3,7 +3,9 @@ import type {
   GameStartedEvent,
   RoundEndedEvent,
   RoundStartedEvent,
+  TileDrawnEvent,
   TilePlayedEvent,
+  TurnPassedEvent,
 } from "../events/schema";
 import { reconstructGameState } from "../reconstruct";
 import type {
@@ -196,5 +198,94 @@ describe("Reconstruction Pipeline", () => {
 
     expect(hand2After?.pipTotal).toBe(12); // tile-6-6
     expect(hand2After?.hasPlayableTile).toBe(false); // Can't play 6-6 on 5
+  });
+
+  it("should reject round-scoped events when roundId does not match active round", () => {
+    const wrongRoundId = "r-stale" as RoundId;
+    const tilePlayed: TilePlayedEvent = {
+      eventId: "ev-3" as EventId,
+      gameId,
+      eventSeq: 3,
+      type: "TILE_PLAYED",
+      version: 1,
+      occurredAt: new Date().toISOString(),
+      playerId: p1,
+      roundId: wrongRoundId,
+      tileId: "tile-5-5" as TileId,
+      side: "left",
+      openPipFacingOutward: 5,
+    };
+    const tileDrawn: TileDrawnEvent = {
+      eventId: "ev-4" as EventId,
+      gameId,
+      eventSeq: 4,
+      type: "TILE_DRAWN",
+      version: 1,
+      occurredAt: new Date().toISOString(),
+      playerId: p1,
+      roundId: wrongRoundId,
+      tileId: "tile-6-6" as TileId,
+      source: "boneyard",
+    };
+    const turnPassed: TurnPassedEvent = {
+      eventId: "ev-5" as EventId,
+      gameId,
+      eventSeq: 5,
+      type: "TURN_PASSED",
+      version: 1,
+      occurredAt: new Date().toISOString(),
+      playerId: p1,
+      roundId: wrongRoundId,
+      reason: "no_playable_tile",
+    };
+
+    expect(() =>
+      reconstructGameState([gameStarted, roundStarted, tilePlayed]),
+    ).toThrow(`Cannot apply TILE_PLAYED for round ${wrongRoundId}`);
+    expect(() =>
+      reconstructGameState([gameStarted, roundStarted, tileDrawn]),
+    ).toThrow(`Cannot apply TILE_DRAWN for round ${wrongRoundId}`);
+    expect(() =>
+      reconstructGameState([gameStarted, roundStarted, turnPassed]),
+    ).toThrow(`Cannot apply TURN_PASSED for round ${wrongRoundId}`);
+  });
+
+  it("should reject TILE_PLAYED when the tile is not in the actor hand", () => {
+    const tilePlayed: TilePlayedEvent = {
+      eventId: "ev-3" as EventId,
+      gameId,
+      eventSeq: 3,
+      type: "TILE_PLAYED",
+      version: 1,
+      occurredAt: new Date().toISOString(),
+      playerId: p1,
+      roundId: "r1" as RoundId,
+      tileId: "tile-6-6" as TileId,
+      side: "left",
+      openPipFacingOutward: 6,
+    };
+
+    expect(() =>
+      reconstructGameState([gameStarted, roundStarted, tilePlayed]),
+    ).toThrow("tile is not in player p1's hand");
+  });
+
+  it("should reject TILE_DRAWN when the tile is not currently in the boneyard", () => {
+    const tileDrawn: TileDrawnEvent = {
+      eventId: "ev-3" as EventId,
+      gameId,
+      eventSeq: 3,
+      type: "TILE_DRAWN",
+      version: 1,
+      occurredAt: new Date().toISOString(),
+      playerId: p1,
+      roundId: "r1" as RoundId,
+      tileId: "tile-5-5" as TileId,
+      source: "boneyard",
+    };
+
+    expect(() =>
+      reconstructGameState([gameStarted, roundStarted, tileDrawn]),
+    ).toThrow("tile is not in the boneyard");
   });
 });

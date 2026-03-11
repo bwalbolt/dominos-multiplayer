@@ -20,6 +20,7 @@ import type {
   PlayerMatchState,
   PlayerProfile,
   ReconstructionState,
+  RoundId,
   RoundResult,
   RoundState,
   Tile,
@@ -355,6 +356,17 @@ const assertRoundActive = (game: GameState, event: GameEvent): RoundState => {
   return game.currentRound;
 };
 
+const assertRoundMatchesEvent = (
+  currentRound: RoundState,
+  event: { type: GameEvent["type"]; roundId: RoundId },
+): void => {
+  if (currentRound.roundId !== event.roundId) {
+    throw new Error(
+      `Cannot apply ${event.type} for round ${event.roundId} while active round is ${currentRound.roundId}.`,
+    );
+  }
+};
+
 const applyRoundStartedEvent = (
   game: GameState,
   event: RoundStartedEvent,
@@ -406,6 +418,7 @@ const applyTilePlayedEvent = (
   event: TilePlayedEvent,
 ): { game: GameState; tileInstances: Record<TileId, TileInstance> } => {
   const currentRound = assertRoundActive(game, event);
+  assertRoundMatchesEvent(currentRound, event);
   const tileInstance = tileInstances[event.tileId];
 
   if (!tileInstance) {
@@ -416,6 +429,12 @@ const applyTilePlayedEvent = (
 
   if (!activeHand) {
     throw new Error(`Unknown player ${event.playerId} in TILE_PLAYED.`);
+  }
+
+  if (!activeHand.tileIds.includes(event.tileId)) {
+    throw new Error(
+      `Cannot apply TILE_PLAYED for tile ${event.tileId}: tile is not in player ${event.playerId}'s hand.`,
+    );
   }
 
   const nextHandTileIds = activeHand.tileIds.filter(
@@ -519,6 +538,7 @@ const applyTileDrawnEvent = (
   event: TileDrawnEvent,
 ): { game: GameState; tileInstances: Record<TileId, TileInstance> } => {
   const currentRound = assertRoundActive(game, event);
+  assertRoundMatchesEvent(currentRound, event);
   const tileInstance = tileInstances[event.tileId];
 
   if (!tileInstance) {
@@ -529,6 +549,12 @@ const applyTileDrawnEvent = (
 
   if (!activeHand) {
     throw new Error(`Unknown player ${event.playerId} in TILE_DRAWN.`);
+  }
+
+  if (!currentRound.boneyard.remainingTileIds.includes(event.tileId)) {
+    throw new Error(
+      `Cannot apply TILE_DRAWN for tile ${event.tileId}: tile is not in the boneyard.`,
+    );
   }
 
   const nextHandTileIds = [...activeHand.tileIds, event.tileId];
@@ -579,17 +605,22 @@ const applyTileDrawnEvent = (
 const applyTurnPassedEvent = (
   game: GameState,
   event: TurnPassedEvent,
-): GameState => ({
-  ...game,
-  turn: game.turn
-    ? {
-        activePlayerId: switchActivePlayer(game.players, event.playerId),
-        turnNumber: game.turn.turnNumber + 1,
-        consecutivePasses: game.turn.consecutivePasses + 1,
-        lastActionAt: event.occurredAt,
-      }
-    : null,
-});
+): GameState => {
+  const currentRound = assertRoundActive(game, event);
+  assertRoundMatchesEvent(currentRound, event);
+
+  return {
+    ...game,
+    turn: game.turn
+      ? {
+          activePlayerId: switchActivePlayer(game.players, event.playerId),
+          turnNumber: game.turn.turnNumber + 1,
+          consecutivePasses: game.turn.consecutivePasses + 1,
+          lastActionAt: event.occurredAt,
+        }
+      : null,
+  };
+};
 
 const applyRoundEndedEvent = (
   game: GameState,
@@ -597,6 +628,7 @@ const applyRoundEndedEvent = (
   event: RoundEndedEvent,
 ): GameState => {
   const currentRound = assertRoundActive(game, event);
+  assertRoundMatchesEvent(currentRound, event);
   if (game.metadata.variant === "fives") {
     const validation = validateFivesRoundEndedEvent({
       game,
