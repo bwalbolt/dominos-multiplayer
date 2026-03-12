@@ -4,13 +4,7 @@ import {
   GameStartedEvent,
   RoundStartedEvent,
 } from "./events/schema";
-import {
-  EventId,
-  GameId,
-  PlayerId,
-  RoundId,
-  TileId,
-} from "./types";
+import { EventId, GameId, PlayerId, RoundId, TileId } from "./types";
 import { createPRNG, shuffle } from "./util/random";
 import { createDoubleSixTileCatalog } from "./util/tiles";
 
@@ -57,7 +51,8 @@ export function createRoundStartedEvent({
   }
 
   return {
-    eventId: `evt-${eventSeq.toString().padStart(3, "0")}-round-started` as EventId,
+    eventId:
+      `evt-${eventSeq.toString().padStart(3, "0")}-round-started` as EventId,
     gameId,
     eventSeq,
     type: "ROUND_STARTED",
@@ -81,7 +76,7 @@ export function createRoundStartedEvent({
 export function createLocalGameSession(
   seed: number,
   player1DisplayName: string = "Avery",
-  player2DisplayName: string = "Blake",
+  player2DisplayName: string | null = "Opponent",
 ): readonly GameEvent[] {
   const gameId = `local-game-${seed}` as GameId;
   const player1Id = "p1" as PlayerId;

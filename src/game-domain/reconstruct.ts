@@ -10,7 +10,6 @@ import type {
   TurnPassedEvent,
 } from "./events/schema";
 import type {
-  BoardOpenEnd,
   BoardState,
   BoneyardState,
   GameParticipants,
@@ -34,6 +33,7 @@ import {
   evaluateFivesLegalMoves,
   validateFivesRoundEndedEvent,
 } from "./variants/fives";
+import { getInitialOpenEndsForTile, upsertOpenEnd } from "./util/board";
 
 type ReconstructionAccumulator = {
   game: GameState | null;
@@ -44,12 +44,6 @@ type ReconstructionAccumulator = {
 
 const FNV_OFFSET_BASIS = 0x811c9dc5;
 const FNV_PRIME = 0x01000193;
-const CHAIN_SIDE_ORDER: readonly TilePlayedEvent["side"][] = [
-  "left",
-  "right",
-  "up",
-  "down",
-];
 
 const createEmptyBoardState = (): BoardState => ({
   layoutDirection: "horizontal",
@@ -92,71 +86,7 @@ const clonePlayerProfile = (player: PlayerProfile): PlayerProfile => ({
   displayName: player.displayName,
 });
 
-const sortOpenEnds = (
-  openEnds: readonly BoardOpenEnd[],
-): readonly BoardOpenEnd[] =>
-  [...openEnds].sort(
-    (left, right) =>
-      CHAIN_SIDE_ORDER.indexOf(left.side) -
-      CHAIN_SIDE_ORDER.indexOf(right.side),
-  );
 
-const createSpinnerOpenEnds = (
-  tileId: TileId,
-  pip: Tile["sideA"],
-): readonly BoardOpenEnd[] =>
-  sortOpenEnds(
-    CHAIN_SIDE_ORDER.map((side) => ({
-      side,
-      pip,
-      tileId,
-    })),
-  );
-
-const getInitialOpenEndsForTile = (
-  tile: Tile,
-  side: TilePlayedEvent["side"],
-  openPipFacingOutward: TilePlayedEvent["openPipFacingOutward"],
-): readonly BoardOpenEnd[] => {
-  if (tile.sideA === tile.sideB) {
-    return createSpinnerOpenEnds(tile.id, openPipFacingOutward);
-  }
-
-  const inwardFacingPip =
-    tile.sideA === openPipFacingOutward ? tile.sideB : tile.sideA;
-
-  return sortOpenEnds([
-    {
-      side,
-      pip: openPipFacingOutward,
-      tileId: tile.id,
-    },
-    {
-      side: side === "left" ? "right" : "left",
-      pip: inwardFacingPip,
-      tileId: tile.id,
-    },
-  ]);
-};
-
-const upsertOpenEnd = (
-  openEnds: readonly BoardOpenEnd[],
-  nextOpenEnd: BoardOpenEnd,
-): readonly BoardOpenEnd[] => {
-  const existingIndex = openEnds.findIndex(
-    (openEnd) => openEnd.side === nextOpenEnd.side,
-  );
-
-  if (existingIndex === -1) {
-    return sortOpenEnds([...openEnds, nextOpenEnd]);
-  }
-
-  return sortOpenEnds(
-    openEnds.map((openEnd, index) =>
-      index === existingIndex ? nextOpenEnd : openEnd,
-    ),
-  );
-};
 
 const getBoardOrder = (
   board: BoardState,

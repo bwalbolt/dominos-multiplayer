@@ -3,6 +3,7 @@ import { BoardHeader } from "@/components/game/BoardHeader";
 import { BoneyardIndicator } from "@/components/game/BoneyardIndicator";
 import { OpponentHand } from "@/components/game/OpponentHand";
 import { PlayerHand } from "@/components/game/PlayerHand";
+import { getComputerAction } from "@/src/game-domain/computer-player";
 import {
   GameEvent,
   RoundEndedEvent,
@@ -14,7 +15,12 @@ import { useBoardCamera } from "@/src/game-domain/layout/useBoardCamera";
 import { useBoardInteraction } from "@/src/game-domain/layout/useBoardInteraction";
 import { createRoundStartedEvent } from "@/src/game-domain/local-session";
 import { useLocalSessionStore } from "@/src/game-domain/local-session-store";
-import { EventId, PlayerId, TileId } from "@/src/game-domain/types";
+import {
+  EventId,
+  PlayerId,
+  ReconstructionState,
+  TileId,
+} from "@/src/game-domain/types";
 import { evaluateFivesLegalMoves } from "@/src/game-domain/variants/fives";
 import {
   checkGameWinner,
@@ -29,7 +35,10 @@ import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 import { StyleSheet } from "react-native-unistyles";
 
 export default function GameScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, opponentName } = useLocalSearchParams<{
+    id: string;
+    opponentName?: string;
+  }>();
   const { reconstruction, initialize, seed } = useLocalSessionStore();
 
   // Use the ID as a seed for deterministic local play
@@ -42,9 +51,9 @@ export default function GameScreen() {
   useEffect(() => {
     // Only initialize if the seed changes or if not already initialized
     if (seed !== numericSeed) {
-      initialize(numericSeed);
+      initialize(numericSeed, opponentName);
     }
-  }, [numericSeed, initialize, seed]);
+  }, [numericSeed, initialize, seed, opponentName]);
 
   if (
     !reconstruction ||
@@ -58,16 +67,20 @@ export default function GameScreen() {
     <GameView
       game={reconstruction.game}
       tileCatalog={reconstruction.tileCatalog}
+      reconstruction={reconstruction}
     />
   );
 }
 
-interface GameViewProps {
-  game: any; // GameState
-  tileCatalog: any; // Record<TileId, Tile>
-}
-
-function GameView({ game, tileCatalog }: GameViewProps) {
+function GameView({
+  game,
+  tileCatalog,
+  reconstruction,
+}: {
+  game: any;
+  tileCatalog: any;
+  reconstruction: ReconstructionState;
+}) {
   const player1Id = "p1" as PlayerId;
   const player2Id = "p2" as PlayerId;
 
@@ -205,6 +218,80 @@ function GameView({ game, tileCatalog }: GameViewProps) {
     if (!currentRound || currentRound.status !== "active") return null;
     return evaluateRoundResolution(currentRound, tileCatalog);
   }, [currentRound, tileCatalog]);
+
+  // Automated Computer Turn
+  useEffect(() => {
+    const isComputerTurn = game.turn?.activePlayerId === player2Id;
+    const isRoundActive = currentRound.status === "active";
+    const noResolutionPending = !resolution;
+
+    if (isComputerTurn && isRoundActive && noResolutionPending) {
+      const timer = setTimeout(() => {
+        const action = getComputerAction(reconstruction, player2Id);
+
+        if (action.kind === "play") {
+          const event: TilePlayedEvent = {
+            eventId: Math.random().toString(36).substring(7) as EventId,
+            gameId: game.gameId,
+            eventSeq: events.length + 1,
+            type: "TILE_PLAYED",
+            version: 1,
+            occurredAt: new Date().toISOString(),
+            playerId: player2Id,
+            roundId: currentRound.roundId,
+            tileId: action.move.tileId,
+            side: action.move.side,
+            openPipFacingOutward: action.move.openPipFacingOutward,
+          };
+          appendEvent(event);
+        } else if (action.kind === "draw") {
+          const tileId = currentRound.boneyard.remainingTileIds[0];
+          if (tileId) {
+            const event: TileDrawnEvent = {
+              eventId: Math.random().toString(36).substring(7) as EventId,
+              gameId: game.gameId,
+              eventSeq: events.length + 1,
+              type: "TILE_DRAWN",
+              version: 1,
+              occurredAt: new Date().toISOString(),
+              playerId: player2Id,
+              roundId: currentRound.roundId,
+              tileId,
+              source: "boneyard",
+            };
+            appendEvent(event);
+          }
+        } else if (action.kind === "pass") {
+          const event: TurnPassedEvent = {
+            eventId: Math.random().toString(36).substring(7) as EventId,
+            gameId: game.gameId,
+            eventSeq: events.length + 1,
+            type: "TURN_PASSED",
+            version: 1,
+            occurredAt: new Date().toISOString(),
+            playerId: player2Id,
+            roundId: currentRound.roundId,
+            reason: "boneyard_empty",
+          };
+          appendEvent(event);
+        }
+      }, 1000); // 1 second delay for natural feel
+
+      return () => clearTimeout(timer);
+    }
+  }, [
+    game.turn?.activePlayerId,
+    game.turn?.turnNumber,
+    currentRound.status,
+    resolution,
+    reconstruction,
+    player2Id,
+    game.gameId,
+    events.length,
+    currentRound.roundId,
+    currentRound.boneyard.remainingTileIds,
+    appendEvent,
+  ]);
 
   const advanceToNextRound = useCallback(() => {
     if (!resolution || !currentRound) return;
@@ -373,7 +460,7 @@ function GameView({ game, tileCatalog }: GameViewProps) {
       <BoardHeader
         opponentName={opponentProfile?.displayName || "Opponent"}
         opponentTitle="Novice" // Static for now as per Figma
-        opponentAvatar={require("@/assets/images/avatar(9).png")} // Placeholder
+        opponentAvatar={require("@/assets/images/avatar(9).png")}
         playerScore={playerState.score}
         opponentScore={opponentState.score}
       />

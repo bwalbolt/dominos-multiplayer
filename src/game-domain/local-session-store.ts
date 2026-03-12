@@ -10,7 +10,7 @@ interface LocalSessionState {
   reconstruction: ReconstructionState | null;
 
   // Actions
-  initialize: (seed: number) => void;
+  initialize: (seed: number, opponentName?: string) => void;
   appendEvent: (event: GameEvent) => void;
   appendEvents: (events: readonly GameEvent[]) => void;
   reset: () => void;
@@ -21,8 +21,8 @@ export const useLocalSessionStore = create<LocalSessionState>((set, get) => ({
   events: [],
   reconstruction: null,
 
-  initialize: (seed: number) => {
-    const events = createLocalGameSession(seed);
+  initialize: (seed: number, opponentName?: string) => {
+    const events = createLocalGameSession(seed, "Avery", opponentName);
     const reconstruction = reconstructGameState(events);
     set({ seed, events, reconstruction });
   },

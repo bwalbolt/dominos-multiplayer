@@ -138,7 +138,11 @@ export default function CasualGameSelection() {
             label="Play Computer"
             variant="play"
             hasIcon
-            onPress={() => router.push(`/game/local-${Date.now()}` as any)}
+            onPress={() =>
+              router.push(
+                `/game/local-${Date.now()}?opponentName=Computer (${difficulty})` as any,
+              )
+            }
             style={styles.playButton}
           />
         </View>
