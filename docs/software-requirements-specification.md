@@ -145,7 +145,7 @@ Database:
 
 Testing:
 
-- Vitest for rules engine + server validators
+- Jest for rules engine + server validators
 - Minimal integration tests for Edge Functions (happy path + security checks)
 
 ---

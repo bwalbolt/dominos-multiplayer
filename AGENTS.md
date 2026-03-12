@@ -10,7 +10,7 @@ Welcome! You are an AI agent contributing to the **Dominoes Multiplayer** app. T
 - **Backend / BaaS**: Supabase (Postgres, Realtime, Edge Functions)
 - **State Management**: Zustand (Client UI state) + TanStack Query (Server state)
 - **Styling**: React Native Unistyles + `tokens.ts` (Design tokens)
-- **Testing**: Vitest for business logic
+- **Testing**: Jest for business logic (via jest-expo)
 
 ## 2. Core Architectural Rules
 
@@ -55,7 +55,15 @@ We use a **Client-Server Architecture** with a **Backend-for-Frontend (BFF)** pa
 1. **Analyze First**: Before writing code, review the `/docs/` folder (`product-requirements.md`, `software-requirements-specification.md`, `user-interface-design.md`) to understand feature context.
 2. **Prioritize Types**: Always define strict TypeScript interfaces/types for Supabase payloads, Edge Function responses, and shared UI component props. No `any` types.
 3. **Figma First**: If instructed to build a UI feature, ask for or refer to the Figma node/URL to generate the component accurately using the MCP.
-4. **Testable Logic**: Any changes to the rules engine or scoring logic must be purely functional and include corresponding Vitest coverage.
+4. **Testable Logic**: Any changes to the rules engine or scoring logic must be purely functional and include corresponding Jest coverage.
 5. **No Scope Creep**: Refer to the "MVP Boundary" in the PRD. Do not implement out-of-scope features like ranked mode, 4-player, chat, or IAP unless explicitly instructed.
 
 By following these rules, you ensure that Dominoes Multiplayer remains robust, scalable, and visually premium.
+
+## 7. Standard Development Commands
+
+Always use these standard scripts for development, validation, and testing:
+- **Dev Server**: `npm run start` (starts the Expo development server)
+- **Linting**: `npm run lint` (runs ESLint via `expo lint`)
+- **Testing**: `npm test` (runs the Jest test suite)
+- **Direct Execution**: Use `npx` for one-off commands (e.g., `npx jest --watch`) to ensure you use the versioned binaries in the project.

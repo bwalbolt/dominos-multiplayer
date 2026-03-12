@@ -1,5 +1,11 @@
 import React from "react";
 import { Pressable, Text, View } from "react-native";
+import Animated, {
+  interpolate,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 import { StyleSheet } from "react-native-unistyles";
 import { designTokens } from "../theme/tokens";
@@ -13,6 +19,9 @@ export type ModeButtonProps = {
   onPress?: () => void;
   colorTheme?: ModeButtonColor;
 };
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+const AnimatedView = Animated.createAnimatedComponent(View);
 
 const getBaseColor = (colorTheme: ModeButtonColor) => {
   switch (colorTheme) {
@@ -35,10 +44,35 @@ export function ModeButton({
   colorTheme = "blue",
 }: ModeButtonProps) {
   const baseColor = getBaseColor(colorTheme);
+  const pressProgress = useSharedValue(0);
+
+  const animatedPressableStyle = useAnimatedStyle(() => ({
+    shadowOffset: {
+      width: interpolate(pressProgress.value, [0, 1], [2, 1]),
+      height: interpolate(pressProgress.value, [0, 1], [4, 2]),
+    },
+    shadowOpacity: interpolate(pressProgress.value, [0, 1], [1, 0.8]),
+    shadowRadius: interpolate(pressProgress.value, [0, 1], [8, 4]),
+    elevation: interpolate(pressProgress.value, [0, 1], [4, 2]),
+    transform: [
+      {
+        scale: interpolate(pressProgress.value, [0, 1], [1, 0.9]),
+      },
+    ],
+  }));
 
   return (
-    <View style={styles.shadowContainer}>
-      <Pressable style={styles.innerContainer} onPress={onPress}>
+    <AnimatedView style={[styles.shadowContainer, animatedPressableStyle]}>
+      <AnimatedPressable
+        style={styles.innerContainer}
+        onPress={onPress}
+        onPressIn={() => {
+          pressProgress.value = withTiming(1, { duration: 120 });
+        }}
+        onPressOut={() => {
+          pressProgress.value = withTiming(0, { duration: 120 });
+        }}
+      >
         <View style={StyleSheet.absoluteFill}>
           <Svg width="100%" height="100%">
             <Defs>
@@ -69,8 +103,8 @@ export function ModeButton({
         <Text style={styles.subtitle} numberOfLines={1}>
           {subtitle}
         </Text>
-      </Pressable>
-    </View>
+      </AnimatedPressable>
+    </AnimatedView>
   );
 }
 

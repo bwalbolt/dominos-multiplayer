@@ -58,7 +58,7 @@ Figma reference: `https://www.figma.com/design/C4ZIO7dO9LwK158lzLUKCH/Dominoes-M
 
 ### T1: Scaffold offline board route + static Figma-aligned layout shell
 
-**Do:** Create `app/game/[id].tsx` and required local UI components to reproduce the board-screen structure from Figma (top status zone, center board area, bottom hand/action zone). Build only static shell and placeholders (no drag yet). Ensure navigation can enter this route from casual setup/debug path.
+**Do:** Create `app/game/[id].tsx` and required local UI components to reproduce the board-screen structure from Figma (top status zone, center board area, bottom hand/action zone). Build only static shell and placeholders (no drag yet). Ensure navigation can enter this route from casual setup/debug path (for now wire to "Play Computer" button).
 
 **Files:** `app/game/[id].tsx`, `app/_layout.tsx`, `app/(tabs)/home/casual.tsx`, game UI component files as needed, `app/theme/tokens.ts` (token additions only if required)
 
@@ -74,7 +74,7 @@ Figma reference: `https://www.figma.com/design/C4ZIO7dO9LwK158lzLUKCH/Dominoes-M
 
 ### T3: Drag/snap/highlight move interactions wired to engine outputs
 
-**Do:** Implement tile drag interactions with snap-to-legal-endpoint behavior and highlight legal placements based on engine-derived move options. On drop, reject illegal placements and commit legal moves through local event append/replay flow.
+**Do:** Implement tile drag interactions with snap-to-legal-endpoint behavior and highlight legal placements based on engine-derived move options. On drop, reject illegal placements and commit legal moves through local event append/replay flow. Resize domino on drop to match board space.
 
 **Files:** board interaction components/hooks, local event-log reducer/replay utilities, `app/game/[id].tsx`
 
@@ -87,6 +87,7 @@ Figma reference: `https://www.figma.com/design/C4ZIO7dO9LwK158lzLUKCH/Dominoes-M
 **Files:** `app/game/[id].tsx`, local game session controller/store, scoring/round utilities, optional test files for deterministic round transitions
 
 **Verify:** Manual playable loop (single device):
+
 1. Place a legal tile.
 2. Draw from boneyard when blocked.
 3. Observe score updates.

@@ -198,7 +198,7 @@ export function Button({
               fx="0%"
               fy="75%"
             >
-              <Stop offset="0%" stopColor="#42C4FF" stopOpacity="0.9" />
+              <Stop offset="0%" stopColor="#42C4FF" stopOpacity="0.8" />
               <Stop offset="100%" stopColor="#0EA5E9" stopOpacity="0" />
             </RadialGradient>
             <RadialGradient
@@ -209,7 +209,7 @@ export function Button({
               fx="110%"
               fy="20%"
             >
-              <Stop offset="0%" stopColor="#00EBD1" stopOpacity="0.65" />
+              <Stop offset="0%" stopColor="#00EBD1" stopOpacity="0.5" />
               <Stop offset="100%" stopColor="#14B8A6" stopOpacity="0" />
             </RadialGradient>
           </Defs>
@@ -257,7 +257,7 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   pressed: {
-    opacity: 0.8,
+    transform: [{ scale: 0.94 }],
   },
   disabled: {
     opacity: 0.5,
