@@ -15,6 +15,66 @@ import { createPRNG, shuffle } from "./util/random";
 import { createDoubleSixTileCatalog } from "./util/tiles";
 
 /**
+ * Creates a ROUND_STARTED event for a given round number and seed.
+ */
+export function createRoundStartedEvent({
+  gameId,
+  eventSeq,
+  roundNumber,
+  seed,
+  playerIds,
+  startingPlayerId,
+  forcePlayer1Hand,
+  forcePlayer2Hand,
+}: {
+  gameId: GameId;
+  eventSeq: number;
+  roundNumber: number;
+  seed: number;
+  playerIds: readonly [PlayerId, PlayerId];
+  startingPlayerId: PlayerId;
+  forcePlayer1Hand?: readonly TileId[];
+  forcePlayer2Hand?: readonly TileId[];
+}): RoundStartedEvent {
+  const prng = createPRNG(seed + roundNumber); // Use round number to vary the shuffle
+  const tileCatalog = createDoubleSixTileCatalog();
+  const allTileIds = tileCatalog.map((t) => t.id);
+
+  let player1Hand: readonly TileId[];
+  let player2Hand: readonly TileId[];
+  let boneyard: readonly TileId[];
+
+  if (forcePlayer1Hand || forcePlayer2Hand) {
+    player1Hand = forcePlayer1Hand || [];
+    player2Hand = forcePlayer2Hand || [];
+    const usedIds = new Set([...player1Hand, ...player2Hand]);
+    boneyard = allTileIds.filter((id) => !usedIds.has(id));
+  } else {
+    const shuffledTileIds = shuffle(allTileIds, prng);
+    player1Hand = shuffledTileIds.slice(0, 7) as readonly TileId[];
+    player2Hand = shuffledTileIds.slice(7, 14) as readonly TileId[];
+    boneyard = shuffledTileIds.slice(14) as readonly TileId[];
+  }
+
+  return {
+    eventId: `evt-${eventSeq.toString().padStart(3, "0")}-round-started` as EventId,
+    gameId,
+    eventSeq,
+    type: "ROUND_STARTED",
+    version: GAME_EVENT_SCHEMA_VERSION,
+    occurredAt: new Date().toISOString(),
+    roundId: `${gameId}-round-${roundNumber}` as RoundId,
+    roundNumber,
+    startingPlayerId,
+    handsByPlayerId: {
+      [playerIds[0]]: player1Hand,
+      [playerIds[1]]: player2Hand,
+    },
+    boneyardTileIds: boneyard,
+  };
+}
+
+/**
  * Creates an initial set of events for a local game session based on a seed.
  * This ensures that the same seed always results in the same initial deal.
  */
@@ -23,27 +83,11 @@ export function createLocalGameSession(
   player1DisplayName: string = "Avery",
   player2DisplayName: string = "Blake",
 ): readonly GameEvent[] {
-  const prng = createPRNG(seed);
-
   const gameId = `local-game-${seed}` as GameId;
   const player1Id = "p1" as PlayerId;
   const player2Id = "p2" as PlayerId;
-  const round1Id = `local-round-${seed}-1` as RoundId;
 
   const tileCatalog = createDoubleSixTileCatalog();
-  const shuffledTileIds = shuffle(
-    tileCatalog.map((t) => t.id),
-    prng,
-  );
-
-  const player1Hand = shuffledTileIds.slice(0, 7) as readonly TileId[];
-  const player2Hand = shuffledTileIds.slice(7, 14) as readonly TileId[];
-  const boneyard = shuffledTileIds.slice(14) as readonly TileId[];
-
-  // Determine who starts. For Fives, often the person with the highest double.
-  // For T2 simplicity, we'll just alternate or pick p1.
-  const startingPlayerId = player1Id;
-
   const now = new Date().toISOString();
 
   const gameStarted: GameStartedEvent = {
@@ -71,22 +115,14 @@ export function createLocalGameSession(
     tileCatalog: [...tileCatalog],
   };
 
-  const roundStarted: RoundStartedEvent = {
-    eventId: "evt-002-round-started" as EventId,
+  const roundStarted = createRoundStartedEvent({
     gameId,
     eventSeq: 2,
-    type: "ROUND_STARTED",
-    version: GAME_EVENT_SCHEMA_VERSION,
-    occurredAt: now,
-    roundId: round1Id,
     roundNumber: 1,
-    startingPlayerId,
-    handsByPlayerId: {
-      [player1Id]: player1Hand,
-      [player2Id]: player2Hand,
-    },
-    boneyardTileIds: boneyard,
-  };
+    seed,
+    playerIds: [player1Id, player2Id],
+    startingPlayerId: player1Id,
+  });
 
   return [gameStarted, roundStarted];
 }

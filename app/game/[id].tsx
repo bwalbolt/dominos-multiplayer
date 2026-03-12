@@ -4,15 +4,22 @@ import { BoneyardIndicator } from "@/components/game/BoneyardIndicator";
 import { OpponentHand } from "@/components/game/OpponentHand";
 import { PlayerHand } from "@/components/game/PlayerHand";
 import {
+  GameEvent,
+  RoundEndedEvent,
   TileDrawnEvent,
   TilePlayedEvent,
   TurnPassedEvent,
 } from "@/src/game-domain/events/schema";
+import { createRoundStartedEvent } from "@/src/game-domain/local-session";
 import { useBoardCamera } from "@/src/game-domain/layout/useBoardCamera";
 import { useBoardInteraction } from "@/src/game-domain/layout/useBoardInteraction";
 import { useLocalSessionStore } from "@/src/game-domain/local-session-store";
 import { EventId, PlayerId, TileId } from "@/src/game-domain/types";
 import { evaluateFivesLegalMoves } from "@/src/game-domain/variants/fives";
+import {
+  evaluateRoundResolution,
+  checkGameWinner,
+} from "@/src/game-domain/variants/fives/round-resolution";
 import { colors, spacing, typography } from "@/theme/tokens";
 import { useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -115,6 +122,7 @@ function GameView({ game, tileCatalog }: GameViewProps) {
 
   const {
     appendEvent,
+    appendEvents,
     events,
     initialize,
     seed: storedSeed,
@@ -127,7 +135,7 @@ function GameView({ game, tileCatalog }: GameViewProps) {
 
   const handleDraw = useCallback(() => {
     if (!currentRound) return;
-    const tileId = currentRound.boneyard.tileIds[0];
+    const tileId = currentRound.boneyard.remainingTileIds[0];
 
     if (tileId) {
       const event: TileDrawnEvent = {
@@ -188,6 +196,149 @@ function GameView({ game, tileCatalog }: GameViewProps) {
   ]);
 
   const [showDevTools, setShowDevTools] = useState(false);
+
+  const resolution = useMemo(() => {
+    if (!currentRound || currentRound.status !== "active") return null;
+    return evaluateRoundResolution(currentRound, tileCatalog);
+  }, [currentRound, tileCatalog]);
+
+  const advanceToNextRound = useCallback(() => {
+    if (!resolution || !currentRound) return;
+
+    // 1. Append ROUND_ENDED
+    const roundEnded: RoundEndedEvent = {
+      eventId: Math.random().toString(36).substring(7) as EventId,
+      gameId: game.gameId,
+      eventSeq: events.length + 1,
+      type: "ROUND_ENDED",
+      version: 1,
+      occurredAt: new Date().toISOString(),
+      roundId: currentRound.roundId,
+      winnerPlayerId: resolution.winnerPlayerId,
+      reason: resolution.reason as any,
+      scoreAwarded: resolution.scoreAwarded,
+      scoreByPlayerId: {
+        [player1Id]:
+          game.playerStateById[player1Id].score +
+          (resolution.winnerPlayerId === player1Id
+            ? resolution.scoreAwarded
+            : 0),
+        [player2Id]:
+          game.playerStateById[player2Id].score +
+          (resolution.winnerPlayerId === player2Id
+            ? resolution.scoreAwarded
+            : 0),
+      },
+      nextStartingPlayerId: resolution.winnerPlayerId || player1Id,
+    };
+
+    // 2. Check for game winner
+    const nextScores = {
+      [player1Id]:
+        game.playerStateById[player1Id].score +
+        (resolution.winnerPlayerId === player1Id ? resolution.scoreAwarded : 0),
+      [player2Id]:
+        game.playerStateById[player2Id].score +
+        (resolution.winnerPlayerId === player2Id ? resolution.scoreAwarded : 0),
+    };
+    const gameWinner = checkGameWinner(nextScores, game.metadata.targetScore);
+
+    if (gameWinner) {
+      const gameEnded: RoundEndedEvent | any = {
+        eventId: Math.random().toString(36).substring(7) as EventId,
+        gameId: game.gameId,
+        eventSeq: events.length + 2,
+        type: "GAME_ENDED",
+        version: 1,
+        occurredAt: new Date().toISOString(),
+        winnerPlayerId: gameWinner,
+        reason: "target_score_reached",
+        finalScoreByPlayerId: nextScores,
+      };
+      appendEvents([roundEnded, gameEnded]);
+    } else {
+      // 3. Append ROUND_STARTED for next round
+      const nextRoundStarted = createRoundStartedEvent({
+        gameId: game.gameId,
+        eventSeq: events.length + 2,
+        roundNumber: currentRound.roundNumber + 1,
+        seed: storedSeed || 123,
+        playerIds: [player1Id, player2Id],
+        startingPlayerId: resolution.winnerPlayerId || player1Id,
+      });
+      appendEvents([roundEnded, nextRoundStarted]);
+    }
+  }, [
+    resolution,
+    currentRound,
+    game.gameId,
+    game.playerStateById,
+    game.metadata.targetScore,
+    events.length,
+    player1Id,
+    player2Id,
+    storedSeed,
+    appendEvents,
+  ]);
+
+  const forceHands = useCallback(() => {
+    if (!currentRound) return;
+
+    const newEvents: GameEvent[] = [];
+    let nextEventSeq = events.length + 1;
+    let nextRoundNumber = currentRound.roundNumber;
+
+    // If a round is active, we must end it before starting a new one
+    if (currentRound.status === "active" || currentRound.endedAt === null) {
+      const roundEnded: RoundEndedEvent = {
+        eventId: Math.random().toString(36).substring(7) as EventId,
+        gameId: game.gameId,
+        eventSeq: nextEventSeq++,
+        type: "ROUND_ENDED",
+        version: 1,
+        occurredAt: new Date().toISOString(),
+        roundId: currentRound.roundId,
+        winnerPlayerId: player1Id,
+        reason: "forfeit", // Using forfeit as a "skipped" reason
+        scoreAwarded: 0,
+        scoreByPlayerId: {
+          [player1Id]: game.playerStateById[player1Id].score,
+          [player2Id]: game.playerStateById[player2Id].score,
+        },
+        nextStartingPlayerId: player1Id,
+      };
+      newEvents.push(roundEnded);
+      nextRoundNumber += 1;
+    } else {
+      nextRoundNumber += 1;
+    }
+
+    const doubleFive = "tile-5-5" as TileId;
+    const doubleFour = "tile-4-4" as TileId;
+
+    const nextRoundStarted = createRoundStartedEvent({
+      gameId: game.gameId,
+      eventSeq: nextEventSeq,
+      roundNumber: nextRoundNumber,
+      seed: storedSeed || 123,
+      playerIds: [player1Id, player2Id],
+      startingPlayerId: player1Id,
+      forcePlayer1Hand: [doubleFive, "tile-0-0" as TileId, "tile-1-1" as TileId],
+      forcePlayer2Hand: [doubleFour, "tile-2-2" as TileId, "tile-3-3" as TileId],
+    });
+    newEvents.push(nextRoundStarted);
+
+    appendEvents(newEvents);
+  }, [
+    currentRound,
+    game.gameId,
+    game.playerStateById,
+    events.length,
+    player1Id,
+    player2Id,
+    storedSeed,
+    appendEvents,
+  ]);
 
   return (
     <View style={styles.container}>
@@ -304,13 +455,31 @@ function GameView({ game, tileCatalog }: GameViewProps) {
 
       {showDevTools && (
         <View style={styles.devTools}>
-          <Text style={styles.devTitle}>Developer Tools</Text>
+          <View style={styles.devHeader}>
+            <Text style={styles.devTitle}>Developer Tools</Text>
+            <Pressable onPress={() => setShowDevTools(false)}>
+              <Text style={styles.devCloseText}>✕</Text>
+            </Pressable>
+          </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             <Pressable
               style={styles.devButton}
               onPress={() => initialize(storedSeed || 123)}
             >
-              <Text style={styles.devButtonText}>Reset Session</Text>
+              <Text style={styles.devButtonText}>Reset Seed</Text>
+            </Pressable>
+
+            <Pressable style={styles.devButton} onPress={forceHands}>
+              <Text style={styles.devButtonText}>Force Hands (Test)</Text>
+            </Pressable>
+
+            <Pressable
+              style={styles.devButton}
+              onPress={() => {
+                initialize(Math.floor(Math.random() * 1000));
+              }}
+            >
+              <Text style={styles.devButtonText}>New Random Seed</Text>
             </Pressable>
 
             <Pressable
@@ -322,14 +491,60 @@ function GameView({ game, tileCatalog }: GameViewProps) {
             >
               <Text style={styles.devButtonText}>Seed 55</Text>
             </Pressable>
-
-            <Pressable
-              style={styles.devButton}
-              onPress={() => setShowDevTools(false)}
-            >
-              <Text style={styles.devButtonText}>Close</Text>
-            </Pressable>
           </ScrollView>
+        </View>
+      )}
+
+      {/* Round Resolution Overlay */}
+      {resolution && (
+        <View style={styles.resolutionOverlay}>
+          <View style={styles.resolutionCard}>
+            <Text style={styles.resolutionTitle}>
+              {resolution.reason === "domino" ? "Domino!" : "Round Blocked"}
+            </Text>
+            <Text style={styles.resolutionWinner}>
+              {resolution.winnerPlayerId === player1Id
+                ? "You Won the Round"
+                : "Opponent Won the Round"}
+            </Text>
+            <View style={styles.resolutionScoreRow}>
+              <Text style={styles.resolutionScoreLabel}>Score Awarded:</Text>
+              <Text style={styles.resolutionScoreValue}>
+                +{resolution.scoreAwarded}
+              </Text>
+            </View>
+            <Pressable
+              style={styles.advanceButton}
+              onPress={advanceToNextRound}
+            >
+              <Text style={styles.advanceButtonText}>Continue</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
+      {/* Game Resolution Overlay */}
+      {game.status === "completed" && (
+        <View style={styles.resolutionOverlay}>
+          <View style={styles.resolutionCard}>
+            <Text style={styles.resolutionTitle}>Game Over!</Text>
+            <Text style={styles.resolutionWinner}>
+              {game.winnerPlayerId === player1Id
+                ? "You Won the Match!"
+                : "Opponent Won the Match!"}
+            </Text>
+            <View style={styles.resolutionScoreRow}>
+              <Text style={styles.resolutionScoreLabel}>Final Score:</Text>
+              <Text style={styles.resolutionScoreValue}>
+                {game.playerStateById[player1Id].score} - {game.playerStateById[player2Id].score}
+              </Text>
+            </View>
+            <Pressable
+              style={styles.advanceButton}
+              onPress={() => initialize(storedSeed || 123)}
+            >
+              <Text style={styles.advanceButtonText}>Play Again</Text>
+            </Pressable>
+          </View>
         </View>
       )}
     </View>
@@ -444,11 +659,21 @@ const styles = StyleSheet.create((theme) => ({
     borderRadius: 16,
     zIndex: 1000,
   },
+  devHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: spacing[8],
+  },
   devTitle: {
     color: colors.white,
     ...typography.smallText,
-    marginBottom: spacing[8],
     opacity: 0.6,
+  },
+  devCloseText: {
+    color: colors.white,
+    ...typography.paragraph,
+    paddingHorizontal: spacing[8],
   },
   devButton: {
     backgroundColor: "rgba(255,255,255,0.1)",
@@ -460,5 +685,60 @@ const styles = StyleSheet.create((theme) => ({
   devButtonText: {
     color: colors.white,
     ...typography.smallText,
+  },
+  resolutionOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 2000,
+  },
+  resolutionCard: {
+    backgroundColor: colors.white,
+    padding: spacing[32],
+    borderRadius: 24,
+    alignItems: "center",
+    width: "80%",
+    shadowColor: colors.shadow,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.4,
+    shadowRadius: 24,
+    elevation: 8,
+  },
+  resolutionTitle: {
+    ...typography.headline2,
+    color: colors.black,
+    marginBottom: spacing[8],
+  },
+  resolutionWinner: {
+    ...typography.paragraph,
+    color: colors.black45,
+    marginBottom: spacing[24],
+  },
+  resolutionScoreRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: spacing[32],
+  },
+  resolutionScoreLabel: {
+    ...typography.paragraph,
+    color: colors.black,
+    marginRight: spacing[8],
+  },
+  resolutionScoreValue: {
+    ...typography.headline3,
+    color: colors.blue,
+    fontWeight: "700",
+  },
+  advanceButton: {
+    backgroundColor: colors.blue,
+    paddingVertical: spacing[16],
+    paddingHorizontal: spacing[48],
+    borderRadius: 99,
+  },
+  advanceButtonText: {
+    color: colors.white,
+    ...typography.paragraph,
+    fontWeight: "600",
   },
 }));
