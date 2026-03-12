@@ -12,8 +12,12 @@ const TILE_HEIGHT = domino.height; // 112
  */
 export function calculateBoardGeometry(board: BoardState): BoardGeometry {
   if (board.tiles.length === 0) {
-    return { placedTiles: [], anchors: [] };
+    return { 
+      placedTiles: [], 
+      anchors: computeLegalAnchors(board, new Map()) 
+    };
   }
+
 
   const placedGeometries: PlacedTileGeometry[] = [];
   const tilesById = new Map<TileId, PlacedTileGeometry>();
@@ -120,10 +124,12 @@ function computeLegalAnchors(board: BoardState, tilesById: Map<TileId, PlacedTil
       id: "initial",
       ownerTileId: null,
       attachmentPoint: { x: 0, y: 0 },
-      direction: "right", 
+      direction: "left", 
       openPip: 0,
     }];
   }
+
+
 
   const { up: upUnlocked, down: downUnlocked } = getSpinnerBranchUnlocks(board);
 

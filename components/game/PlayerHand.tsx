@@ -2,29 +2,46 @@ import React from "react";
 import { View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 
-import { DominoTile } from "@/components/domino/domino-tile";
+import { DraggableHandTile } from "./DraggableHandTile";
 import { spacing } from "@/theme/tokens";
 
+import { TileId } from "@/src/game-domain/types";
+
 interface PlayerHandProps {
-  hand: { value1: number; value2: number }[];
+  hand: { id: TileId; value1: number; value2: number }[];
+  playableTileIds: Set<TileId>;
+  onDragStart: (tileId: TileId) => void;
+  onDragUpdate: (x: number, y: number) => void;
+  onDragEnd: () => void;
 }
 
-export const PlayerHand: React.FC<PlayerHandProps> = ({ hand }) => {
+export const PlayerHand: React.FC<PlayerHandProps> = ({ 
+  hand,
+  playableTileIds,
+  onDragStart,
+  onDragUpdate,
+  onDragEnd,
+}) => {
   return (
     <View style={styles.container}>
-      {hand.map((tile, index) => (
-        <View key={index} style={styles.tileWrapper}>
-          <DominoTile
-            value1={tile.value1 as any}
-            value2={tile.value2 as any}
-            orientation="up"
-            scale={0.85}
+      {hand.map((tile) => (
+        <View key={tile.id} style={styles.tileWrapper}>
+          <DraggableHandTile
+            tileId={tile.id}
+            value1={tile.value1}
+            value2={tile.value2}
+            isPlayable={playableTileIds.has(tile.id)}
+            onDragStart={onDragStart}
+            onDragUpdate={onDragUpdate}
+            onDragEnd={onDragEnd}
           />
         </View>
       ))}
     </View>
   );
 };
+
+
 
 const styles = StyleSheet.create(() => ({
   container: {
