@@ -10,6 +10,7 @@ import { TileId } from "@/src/game-domain/types";
 interface PlayerHandProps {
   hand: { id: TileId; value1: number; value2: number }[];
   playableTileIds: Set<TileId>;
+  isInteractionEnabled: boolean;
   onDragStart: (tileId: TileId) => void;
   onDragUpdate: (x: number, y: number) => void;
   onDragEnd: () => void;
@@ -18,6 +19,7 @@ interface PlayerHandProps {
 export const PlayerHand: React.FC<PlayerHandProps> = ({ 
   hand,
   playableTileIds,
+  isInteractionEnabled,
   onDragStart,
   onDragUpdate,
   onDragEnd,
@@ -31,6 +33,7 @@ export const PlayerHand: React.FC<PlayerHandProps> = ({
             value1={tile.value1}
             value2={tile.value2}
             isPlayable={playableTileIds.has(tile.id)}
+            isInteractionEnabled={isInteractionEnabled}
             onDragStart={onDragStart}
             onDragUpdate={onDragUpdate}
             onDragEnd={onDragEnd}

@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { 
   FivesLegalMove, 
   Tile, 
@@ -13,7 +13,8 @@ export function useBoardInteraction(
   legalMoves: readonly FivesLegalMove[],
   tileCatalog: Record<TileId, Tile>,
   cameraTransform: CameraTransform,
-  containerOffset: Point
+  containerOffset: Point,
+  isInteractionEnabled: boolean,
 ) {
   const [draggedTileId, setDraggedTileId] = useState<TileId | null>(null);
   const [dragPosition, setDragPosition] = useState<Point | null>(null);
@@ -31,11 +32,29 @@ export function useBoardInteraction(
   }, [cameraTransform, containerOffset]);
 
 
+  useEffect(() => {
+    if (isInteractionEnabled) {
+      return;
+    }
+
+    setDraggedTileId(null);
+    setDragPosition(null);
+    setActiveSnap(null);
+  }, [isInteractionEnabled]);
+
   const onDragStart = (tileId: TileId) => {
+    if (!isInteractionEnabled) {
+      return;
+    }
+
     setDraggedTileId(tileId);
   };
 
   const onDragUpdate = (screenX: number, screenY: number) => {
+    if (!isInteractionEnabled || draggedTileId === null) {
+      return;
+    }
+
     const boardPoint = screenToBoard(screenX, screenY);
     setDragPosition(boardPoint);
 
@@ -52,6 +71,13 @@ export function useBoardInteraction(
   };
 
   const onDragEnd = () => {
+    if (!isInteractionEnabled) {
+      setDraggedTileId(null);
+      setDragPosition(null);
+      setActiveSnap(null);
+      return null;
+    }
+
     const snap = activeSnap;
     const tileId = draggedTileId;
     
@@ -67,7 +93,13 @@ export function useBoardInteraction(
     return null;
   };
 
-  const previewGeometry =DraggedTileGeometry(draggedTileId, activeSnap, tileCatalog, legalMoves, dragPosition);
+  const previewGeometry = DraggedTileGeometry(
+    isInteractionEnabled ? draggedTileId : null,
+    activeSnap,
+    tileCatalog,
+    legalMoves,
+    dragPosition,
+  );
 
   return {
     draggedTileId,

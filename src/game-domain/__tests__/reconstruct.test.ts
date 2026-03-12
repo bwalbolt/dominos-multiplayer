@@ -272,10 +272,32 @@ describe("Reconstruction Pipeline", () => {
   });
 
   it("should reject turn actions after ROUND_ENDED", () => {
-    const roundEnded: RoundEndedEvent = {
+    const roundStartedForDomino: RoundStartedEvent = {
+      ...roundStarted,
+      handsByPlayerId: {
+        [p1]: ["tile-5-5" as TileId],
+        [p2]: ["tile-6-6" as TileId],
+      },
+    };
+
+    const tilePlayed: TilePlayedEvent = {
       eventId: "ev-3" as EventId,
       gameId,
       eventSeq: 3,
+      type: "TILE_PLAYED",
+      version: 1,
+      occurredAt: new Date().toISOString(),
+      playerId: p1,
+      roundId: "r1" as RoundId,
+      tileId: "tile-5-5" as TileId,
+      side: "left",
+      openPipFacingOutward: 5,
+    };
+
+    const roundEnded: RoundEndedEvent = {
+      eventId: "ev-4" as EventId,
+      gameId,
+      eventSeq: 4,
       type: "ROUND_ENDED",
       version: 1,
       occurredAt: new Date().toISOString(),
@@ -284,16 +306,16 @@ describe("Reconstruction Pipeline", () => {
       reason: "domino",
       scoreAwarded: 10,
       scoreByPlayerId: {
-        [p1]: 10,
+        [p1]: 20,
         [p2]: 0,
       },
-      nextStartingPlayerId: p1,
+      nextStartingPlayerId: p2,
     };
 
     const latePlay: TilePlayedEvent = {
-      eventId: "ev-4" as EventId,
+      eventId: "ev-5" as EventId,
       gameId,
-      eventSeq: 4,
+      eventSeq: 5,
       type: "TILE_PLAYED",
       version: 1,
       occurredAt: new Date().toISOString(),
@@ -305,7 +327,13 @@ describe("Reconstruction Pipeline", () => {
     };
 
     expect(() =>
-      reconstructGameState([gameStarted, roundStarted, roundEnded, latePlay]),
+      reconstructGameState([
+        gameStarted,
+        roundStartedForDomino,
+        tilePlayed,
+        roundEnded,
+        latePlay,
+      ]),
     ).toThrow("Cannot apply TILE_PLAYED because round r1 is completed");
   });
 

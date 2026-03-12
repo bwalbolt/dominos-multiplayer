@@ -118,6 +118,7 @@ function GameView({ game, tileCatalog }: GameViewProps) {
     tileCatalog,
     transform,
     containerOffset,
+    isPlayerTurn,
   );
 
   const {
@@ -169,27 +170,25 @@ function GameView({ game, tileCatalog }: GameViewProps) {
   }, [currentRound, game.gameId, events.length, player1Id, appendEvent]);
 
   const handleDragEnd = useCallback(() => {
-    if (!isPlayerTurn) {
+    const move = onDragEnd();
+    if (!isPlayerTurn || !move || !currentRound) {
       return;
     }
 
-    const move = onDragEnd();
-    if (move && currentRound) {
-      const event: TilePlayedEvent = {
-        eventId: Math.random().toString(36).substring(7) as EventId,
-        gameId: game.gameId,
-        eventSeq: events.length + 1,
-        type: "TILE_PLAYED",
-        version: 1,
-        occurredAt: new Date().toISOString(),
-        playerId: player1Id,
-        roundId: currentRound.roundId,
-        tileId: move.tileId,
-        side: move.side,
-        openPipFacingOutward: move.openPipFacingOutward,
-      };
-      appendEvent(event);
-    }
+    const event: TilePlayedEvent = {
+      eventId: Math.random().toString(36).substring(7) as EventId,
+      gameId: game.gameId,
+      eventSeq: events.length + 1,
+      type: "TILE_PLAYED",
+      version: 1,
+      occurredAt: new Date().toISOString(),
+      playerId: player1Id,
+      roundId: currentRound.roundId,
+      tileId: move.tileId,
+      side: move.side,
+      openPipFacingOutward: move.openPipFacingOutward,
+    };
+    appendEvent(event);
   }, [
     onDragEnd,
     currentRound,
@@ -451,6 +450,7 @@ function GameView({ game, tileCatalog }: GameViewProps) {
           <PlayerHand
             hand={playerHand}
             playableTileIds={playableTileIds}
+            isInteractionEnabled={isPlayerTurn}
             onDragStart={onDragStart}
             onDragUpdate={onDragUpdate}
             onDragEnd={handleDragEnd}

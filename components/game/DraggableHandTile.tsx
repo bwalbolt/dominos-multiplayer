@@ -14,6 +14,7 @@ interface DraggableHandTileProps {
   value1: number;
   value2: number;
   isPlayable?: boolean;
+  isInteractionEnabled: boolean;
   onDragStart: (tileId: TileId) => void;
   onDragUpdate: (screenX: number, screenY: number) => void;
   onDragEnd: () => void;
@@ -24,6 +25,7 @@ export const DraggableHandTile: React.FC<DraggableHandTileProps> = ({
   value1,
   value2,
   isPlayable = false,
+  isInteractionEnabled,
   onDragStart,
   onDragUpdate,
   onDragEnd,
@@ -35,9 +37,10 @@ export const DraggableHandTile: React.FC<DraggableHandTileProps> = ({
 
   const startX = useSharedValue(0);
   const startY = useSharedValue(0);
+  const canDrag = isPlayable && isInteractionEnabled;
 
   const panGesture = Gesture.Pan()
-    .enabled(isPlayable) // Only allow dragging if playable
+    .enabled(canDrag)
     .onStart(() => {
       isDragging.value = true;
       startX.value = translateX.value;
@@ -83,4 +86,3 @@ export const DraggableHandTile: React.FC<DraggableHandTileProps> = ({
     </GestureDetector>
   );
 };
-
