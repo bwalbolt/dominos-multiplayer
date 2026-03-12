@@ -50,7 +50,7 @@ export const BoardHeader: React.FC<BoardHeaderProps> = ({
 
 const styles = StyleSheet.create((theme) => ({
   header: {
-    paddingTop: spacing[64],
+    paddingTop: spacing[72],
     paddingHorizontal: designTokens.siteGutter,
     paddingBottom: spacing[16],
     flexDirection: "row",
@@ -100,6 +100,7 @@ const styles = StyleSheet.create((theme) => ({
   scoreContainer: {
     flexDirection: "row",
     alignItems: "center",
+    paddingHorizontal: spacing[8],
   },
   scoreValue: {
     ...typography.scoreText,

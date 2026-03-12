@@ -10,20 +10,20 @@ import {
   TilePlayedEvent,
   TurnPassedEvent,
 } from "@/src/game-domain/events/schema";
-import { createRoundStartedEvent } from "@/src/game-domain/local-session";
 import { useBoardCamera } from "@/src/game-domain/layout/useBoardCamera";
 import { useBoardInteraction } from "@/src/game-domain/layout/useBoardInteraction";
+import { createRoundStartedEvent } from "@/src/game-domain/local-session";
 import { useLocalSessionStore } from "@/src/game-domain/local-session-store";
 import { EventId, PlayerId, TileId } from "@/src/game-domain/types";
 import { evaluateFivesLegalMoves } from "@/src/game-domain/variants/fives";
 import {
-  evaluateRoundResolution,
   checkGameWinner,
+  evaluateRoundResolution,
 } from "@/src/game-domain/variants/fives/round-resolution";
 import { colors, spacing, typography } from "@/theme/tokens";
+import { Image } from "expo-image";
 import { useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Image } from "expo-image";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 import { StyleSheet } from "react-native-unistyles";
@@ -327,8 +327,16 @@ function GameView({ game, tileCatalog }: GameViewProps) {
       seed: storedSeed || 123,
       playerIds: [player1Id, player2Id],
       startingPlayerId: player1Id,
-      forcePlayer1Hand: [doubleFive, "tile-0-0" as TileId, "tile-1-1" as TileId],
-      forcePlayer2Hand: [doubleFour, "tile-2-2" as TileId, "tile-3-3" as TileId],
+      forcePlayer1Hand: [
+        doubleFive,
+        "tile-0-0" as TileId,
+        "tile-1-1" as TileId,
+      ],
+      forcePlayer2Hand: [
+        doubleFour,
+        "tile-2-2" as TileId,
+        "tile-3-3" as TileId,
+      ],
     });
     newEvents.push(nextRoundStarted);
 
@@ -347,7 +355,10 @@ function GameView({ game, tileCatalog }: GameViewProps) {
   return (
     <View style={styles.container}>
       <Pressable
-        style={styles.moreOptionsTrigger}
+        style={({ pressed }) => [
+          styles.moreOptionsTrigger,
+          pressed && styles.moreOptionsTriggerPressed,
+        ]}
         onPress={() => setShowDevTools(!showDevTools)}
       >
         <View style={styles.moreOptions}>
@@ -368,7 +379,7 @@ function GameView({ game, tileCatalog }: GameViewProps) {
       />
 
       <View style={styles.content}>
-        <OpponentHand count={opponentHandCount} />
+        <OpponentHand count={opponentHandCount} isTurn={game.turn?.activePlayerId === player2Id} />
 
         <View style={styles.boneyardWrapper}>
           <BoneyardIndicator count={boneyardCount} />
@@ -540,7 +551,8 @@ function GameView({ game, tileCatalog }: GameViewProps) {
             <View style={styles.resolutionScoreRow}>
               <Text style={styles.resolutionScoreLabel}>Final Score:</Text>
               <Text style={styles.resolutionScoreValue}>
-                {game.playerStateById[player1Id].score} - {game.playerStateById[player2Id].score}
+                {game.playerStateById[player1Id].score} -{" "}
+                {game.playerStateById[player2Id].score}
               </Text>
             </View>
             <Pressable
@@ -633,6 +645,9 @@ const styles = StyleSheet.create((theme) => ({
     justifyContent: "center",
     alignItems: "center",
     zIndex: 9999,
+  },
+  moreOptionsTriggerPressed: {
+    transform: [{ scale: 0.88 }],
   },
   moreOptions: {
     width: spacing[40],
