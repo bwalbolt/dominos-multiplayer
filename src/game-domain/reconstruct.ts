@@ -353,6 +353,18 @@ const assertRoundActive = (game: GameState, event: GameEvent): RoundState => {
     throw new Error(`Cannot apply ${event.type} without an active round.`);
   }
 
+  if (game.currentRound.status !== "active") {
+    throw new Error(
+      `Cannot apply ${event.type} because round ${game.currentRound.roundId} is ${game.currentRound.status}.`,
+    );
+  }
+
+  if (game.status !== "active") {
+    throw new Error(
+      `Cannot apply ${event.type} because game ${game.gameId} is ${game.status}.`,
+    );
+  }
+
   return game.currentRound;
 };
 

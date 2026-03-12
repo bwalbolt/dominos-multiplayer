@@ -1,5 +1,6 @@
 import type {
   GameEvent,
+  GameEndedEvent,
   GameStartedEvent,
   RoundEndedEvent,
   RoundStartedEvent,
@@ -270,6 +271,77 @@ describe("Reconstruction Pipeline", () => {
     ).toThrow("tile is not in player p1's hand");
   });
 
+  it("should reject turn actions after ROUND_ENDED", () => {
+    const roundEnded: RoundEndedEvent = {
+      eventId: "ev-3" as EventId,
+      gameId,
+      eventSeq: 3,
+      type: "ROUND_ENDED",
+      version: 1,
+      occurredAt: new Date().toISOString(),
+      roundId: "r1" as RoundId,
+      winnerPlayerId: p1,
+      reason: "domino",
+      scoreAwarded: 10,
+      scoreByPlayerId: {
+        [p1]: 10,
+        [p2]: 0,
+      },
+      nextStartingPlayerId: p1,
+    };
+
+    const latePlay: TilePlayedEvent = {
+      eventId: "ev-4" as EventId,
+      gameId,
+      eventSeq: 4,
+      type: "TILE_PLAYED",
+      version: 1,
+      occurredAt: new Date().toISOString(),
+      playerId: p1,
+      roundId: "r1" as RoundId,
+      tileId: "tile-5-5" as TileId,
+      side: "left",
+      openPipFacingOutward: 5,
+    };
+
+    expect(() =>
+      reconstructGameState([gameStarted, roundStarted, roundEnded, latePlay]),
+    ).toThrow("Cannot apply TILE_PLAYED because round r1 is completed");
+  });
+
+  it("should reject turn actions after GAME_ENDED", () => {
+    const gameEnded: GameEndedEvent = {
+      eventId: "ev-3" as EventId,
+      gameId,
+      eventSeq: 3,
+      type: "GAME_ENDED",
+      version: 1,
+      occurredAt: new Date().toISOString(),
+      winnerPlayerId: p1,
+      reason: "target_score_reached",
+      finalScoreByPlayerId: {
+        [p1]: 100,
+        [p2]: 20,
+      },
+    };
+
+    const lateDraw: TileDrawnEvent = {
+      eventId: "ev-4" as EventId,
+      gameId,
+      eventSeq: 4,
+      type: "TILE_DRAWN",
+      version: 1,
+      occurredAt: new Date().toISOString(),
+      playerId: p1,
+      roundId: "r1" as RoundId,
+      tileId: "tile-6-6" as TileId,
+      source: "boneyard",
+    };
+
+    expect(() =>
+      reconstructGameState([gameStarted, roundStarted, gameEnded, lateDraw]),
+    ).toThrow("Cannot apply TILE_DRAWN because game game-1 is completed");
+  });
   it("should reject TILE_DRAWN when the tile is not currently in the boneyard", () => {
     const tileDrawn: TileDrawnEvent = {
       eventId: "ev-3" as EventId,

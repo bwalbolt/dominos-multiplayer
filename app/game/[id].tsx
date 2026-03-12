@@ -169,6 +169,10 @@ function GameView({ game, tileCatalog }: GameViewProps) {
   }, [currentRound, game.gameId, events.length, player1Id, appendEvent]);
 
   const handleDragEnd = useCallback(() => {
+    if (!isPlayerTurn) {
+      return;
+    }
+
     const move = onDragEnd();
     if (move && currentRound) {
       const event: TilePlayedEvent = {
@@ -191,6 +195,7 @@ function GameView({ game, tileCatalog }: GameViewProps) {
     currentRound,
     game.gameId,
     events.length,
+    isPlayerTurn,
     player1Id,
     appendEvent,
   ]);
