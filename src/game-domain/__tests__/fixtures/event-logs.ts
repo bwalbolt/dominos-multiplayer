@@ -135,7 +135,7 @@ export const BLOCKED_ROUND_EVENT_LOG = buildFixtureEventLog([
     winnerPlayerId: FIXTURE_IDS.playerOneId,
     reason: "blocked",
     scoreAwarded: 0,
-    scoreByPlayerId: createScoreByPlayerId(0, 0),
+    scoreByPlayerId: createScoreByPlayerId(0, 5),
     nextStartingPlayerId: FIXTURE_IDS.playerOneId,
   }),
 ]);

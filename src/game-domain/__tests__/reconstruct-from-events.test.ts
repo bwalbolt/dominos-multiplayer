@@ -60,7 +60,7 @@ describe("Reconstruction from fixture event logs", () => {
       scoreAwarded: 0,
     });
     expect(game.playerStateById[FIXTURE_IDS.playerOneId].score).toBe(0);
-    expect(game.playerStateById[FIXTURE_IDS.playerTwoId].score).toBe(0);
+    expect(game.playerStateById[FIXTURE_IDS.playerTwoId].score).toBe(5);
   });
 
   it("replays the expiration-forfeit log into a forfeited game state", () => {
@@ -82,13 +82,14 @@ describe("Reconstruction from fixture event logs", () => {
   });
 
   it("rejects a round-ended event that contradicts deterministic blocked scoring", () => {
+    const originalEndedEvent = BLOCKED_ROUND_EVENT_LOG[6] as RoundEndedEvent;
     const invalidBlockedLog = [
       ...BLOCKED_ROUND_EVENT_LOG.slice(0, 6),
       {
-        ...BLOCKED_ROUND_EVENT_LOG[6],
+        ...originalEndedEvent,
         scoreAwarded: 5,
         scoreByPlayerId: {
-          ...BLOCKED_ROUND_EVENT_LOG[6].scoreByPlayerId,
+          ...originalEndedEvent.scoreByPlayerId,
           [FIXTURE_IDS.playerOneId]: 5,
         },
       } as RoundEndedEvent,

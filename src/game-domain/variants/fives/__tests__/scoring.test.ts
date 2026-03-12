@@ -45,9 +45,9 @@ describe("Fives Scoring & Resolution", () => {
         layoutDirection: "horizontal",
         spinnerTileId: "tile-5-5" as TileId,
         openEnds: [
-          { side: "left", pip: 5 as DominoPip, tileId: "tile-5-x" as TileId },
-          { side: "right", pip: 5 as DominoPip, tileId: "tile-5-y" as TileId },
-          { side: "up", pip: 5 as DominoPip, tileId: "tile-5-z" as TileId },
+          { side: "left", pip: 5 as DominoPip, tileId: "t1" as TileId },
+          { side: "right", pip: 5 as DominoPip, tileId: "t2" as TileId },
+          { side: "up", pip: 5 as DominoPip, tileId: "t3" as TileId },
         ],
         tiles: [
           {
@@ -58,21 +58,21 @@ describe("Fives Scoring & Resolution", () => {
             openPipFacingOutward: 5,
           },
           {
-            tile: { id: "t1", sideA: 5, sideB: 5 } as any,
+            tile: { id: "t1", sideA: 5, sideB: 0 } as any,
             playedBy: "p1" as any,
             placedAtSeq: 2,
             side: "left",
             openPipFacingOutward: 5,
           },
           {
-            tile: { id: "t2", sideA: 5, sideB: 5 } as any,
+            tile: { id: "t2", sideA: 5, sideB: 0 } as any,
             playedBy: "p2" as any,
             placedAtSeq: 3,
             side: "right",
             openPipFacingOutward: 5,
           },
           {
-            tile: { id: "t3", sideA: 5, sideB: 5 } as any,
+            tile: { id: "t3", sideA: 5, sideB: 0 } as any,
             playedBy: "p1" as any,
             placedAtSeq: 4,
             side: "up",

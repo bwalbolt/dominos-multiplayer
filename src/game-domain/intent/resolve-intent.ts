@@ -88,10 +88,11 @@ const resolveOpeningMoveIntent = (
     isOpeningMove: true,
   });
 
-  if (!validationResult.validation.ok) {
+  const validation = validationResult.validation;
+  if (validation.ok === false) {
     return createFailure(
-      validationResult.validation.code,
-      validationResult.validation.message,
+      validation.code,
+      validation.message,
       input.snapResolution,
     );
   }
@@ -107,12 +108,12 @@ const resolveOpeningMoveIntent = (
       variant: "fives",
       expectedEventSeq: input.expectedEventSeq,
       idempotencyKey: input.idempotencyKey,
-      tileId: validationResult.validation.value.tileId,
-      side: validationResult.validation.value.side,
-      openPipFacingOutward: validationResult.validation.value.openPipFacingOutward,
+      tileId: validation.value.tileId,
+      side: validation.value.side,
+      openPipFacingOutward: validation.value.openPipFacingOutward,
       anchorId: null,
     },
-    legalMove: validationResult.validation.value,
+    legalMove: validation.value,
     snapResolution: input.snapResolution,
   };
 };
@@ -131,7 +132,7 @@ const getCandidateOutwardPips = (
     candidates.push(tile.sideA);
   }
 
-  return [...new Set(candidates)];
+  return Array.from(new Set(candidates));
 };
 
 export const resolveMoveIntent = (
@@ -221,13 +222,14 @@ export const resolveMoveIntent = (
     isOpeningMove: false,
   });
 
+  const validation = validationResult.validation;
   return createFailure(
-    validationResult.validation.ok
+    validation.ok === true
       ? "illegal_orientation"
-      : validationResult.validation.code,
-    validationResult.validation.ok
+      : validation.code,
+    validation.ok === true
       ? "Dragged tile resolved to an invalid orientation."
-      : validationResult.validation.message,
+      : validation.message,
     input.snapResolution,
   );
 };

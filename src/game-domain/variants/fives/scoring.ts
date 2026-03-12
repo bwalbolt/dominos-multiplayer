@@ -1,5 +1,4 @@
-import type { BoardState, ChainSide, DominoPip } from "../../types";
-import { getFivesSpinnerBranchStatus } from "./legal-moves";
+import type { BoardState, TileId } from "../../types";
 
 /**
  * Calculates the score for a given board state in Fives.
@@ -13,35 +12,41 @@ export const calculateFivesBoardScore = (board: BoardState): number => {
     return 0;
   }
 
-  const branchStatus = getFivesSpinnerBranchStatus(board);
-  const openEndsBySide = Object.fromEntries(
-    board.openEnds.map((oe) => [oe.side, oe.pip]),
-  ) as Partial<Record<ChainSide, DominoPip>>;
+  const spinnerTileId = board.spinnerTileId;
+  const numSpinnerBranches = spinnerTileId
+    ? new Set(
+        board.tiles
+          .filter((t) => t.tile.id !== spinnerTileId)
+          .map((t) => t.side),
+      ).size
+    : 0;
 
   let totalPips = 0;
+  const processedTiles = new Set<TileId>();
 
-  // We only sum pips for sides that are currently "open" for play.
-  // This correctly handles the spinner behavior:
-  // - If it's the first tile (spinner), only left/right are open.
-  // - Once both arms exist, up/down also become open.
-  if (branchStatus.left === "open" && openEndsBySide.left !== undefined) {
-    totalPips += openEndsBySide.left;
-  }
-  if (branchStatus.right === "open" && openEndsBySide.right !== undefined) {
-    totalPips += openEndsBySide.right;
-  }
-  if (branchStatus.up === "open" && openEndsBySide.up !== undefined) {
-    totalPips += openEndsBySide.up;
-  }
-  if (branchStatus.down === "open" && openEndsBySide.down !== undefined) {
-    totalPips += openEndsBySide.down;
-  }
+  for (const oe of board.openEnds) {
+    if (oe.tileId === null) continue;
+    if (processedTiles.has(oe.tileId)) continue;
 
-  // Special case: if there's only one tile and it's a double, totalPips will be pip*2.
-  // However, reconstruction.ts creates 4 open ends for a double.
-  // getFivesSpinnerBranchStatus handles this by only marking left/right as open.
-  // So for a 5-5 opening move: left=5, right=5, total=10. Scores 10.
-  // For a 6-6 opening move: left=6, right=6, total=12. Scores 0.
+    const playedTile = board.tiles.find((t) => t.tile.id === oe.tileId);
+    if (!playedTile) continue;
+
+    const tile = playedTile.tile;
+    const isDouble = tile.sideA === tile.sideB;
+
+    if (oe.tileId === spinnerTileId) {
+      if (numSpinnerBranches < 2) {
+        totalPips += tile.sideA * 2;
+      }
+      processedTiles.add(oe.tileId);
+    } else if (isDouble) {
+      // Non-spinner double at an end always has exactly 1 branch
+      totalPips += tile.sideA * 2;
+      processedTiles.add(oe.tileId);
+    } else {
+      totalPips += oe.pip;
+    }
+  }
 
   if (totalPips > 0 && totalPips % 5 === 0) {
     return totalPips;

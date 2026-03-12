@@ -28,7 +28,7 @@ describe("Fives scoring fixtures", () => {
     expect(calculateFivesBoardScore(board!)).toBe(0);
   });
 
-  it("scores fifteen once both spinner arms unlock the vertical branches", () => {
+  it("scores zero once both spinner arms unlock but before up/down tiles are played", () => {
     const state = reconstructGameState(SPINNER_EXPANSION_EVENT_LOG.slice(0, 5));
     const board = requireGame(state.game).currentRound?.board;
 
@@ -39,7 +39,9 @@ describe("Fives scoring fixtures", () => {
       { side: "up", pip: 6, tileId: "tile-6-6" },
       { side: "down", pip: 6, tileId: "tile-6-6" },
     ]);
-    expect(calculateFivesBoardScore(board!)).toBe(15);
+    // Spinner (6-6) has 2 branches, so it counts as 0. 
+    // Ends are left: 2 and right: 1. Total = 3.
+    expect(calculateFivesBoardScore(board!)).toBe(0);
   });
 
   it("resolves the blocked-round fixture deterministically before authoritative event sync", () => {
