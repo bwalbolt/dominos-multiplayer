@@ -6,6 +6,7 @@ import { PlayerHand } from "@/components/game/PlayerHand";
 import { getComputerAction } from "@/src/game-domain/computer-player";
 import {
   GameEvent,
+  GameEndedEvent,
   RoundEndedEvent,
   TileDrawnEvent,
   TilePlayedEvent,
@@ -41,12 +42,25 @@ export default function GameScreen() {
   }>();
   const { reconstruction, initialize, seed } = useLocalSessionStore();
 
+  const getSeedFromGameId = useCallback((gameId?: string) => {
+    if (!gameId) return 123;
+
+    const parsed = Number.parseInt(gameId, 10);
+    if (!Number.isNaN(parsed)) {
+      return parsed;
+    }
+
+    const hashed = Array.from(gameId).reduce((accumulator, character) => {
+      return (accumulator * 31 + character.charCodeAt(0)) >>> 0;
+    }, 0);
+
+    return hashed === 0 ? 123 : hashed;
+  }, []);
+
   // Use the ID as a seed for deterministic local play
   const numericSeed = useMemo(() => {
-    if (!id) return 123;
-    const parsed = parseInt(id, 10);
-    return isNaN(parsed) ? 123 : parsed;
-  }, [id]);
+    return getSeedFromGameId(id);
+  }, [getSeedFromGameId, id]);
 
   useEffect(() => {
     // Only initialize if the seed changes or if not already initialized
@@ -335,13 +349,14 @@ function GameView({
     const gameWinner = checkGameWinner(nextScores, game.metadata.targetScore);
 
     if (gameWinner) {
-      const gameEnded: RoundEndedEvent | any = {
+      const gameEnded: GameEndedEvent = {
         eventId: Math.random().toString(36).substring(7) as EventId,
         gameId: game.gameId,
         eventSeq: events.length + 2,
         type: "GAME_ENDED",
         version: 1,
         occurredAt: new Date().toISOString(),
+        roundId: currentRound.roundId,
         winnerPlayerId: gameWinner,
         reason: "target_score_reached",
         finalScoreByPlayerId: nextScores,
