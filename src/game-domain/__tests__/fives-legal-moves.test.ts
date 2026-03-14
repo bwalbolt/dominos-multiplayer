@@ -193,7 +193,7 @@ describe("Fives legality fixtures", () => {
       value: {
         tileId: getFixtureTileId(2, 5),
         side: "left",
-        inwardTileSide: "sideB",
+        inwardTileSide: "sideA",
         openPipFacingOutward: 5,
       },
     });

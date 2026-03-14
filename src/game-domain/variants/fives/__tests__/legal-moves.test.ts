@@ -156,13 +156,13 @@ describe("Fives Legal Moves (T1)", () => {
           tileId: "tile-6-5",
           side: "left",
           inwardTileSide: "sideA",
-          openPipFacingOutward: 6,
+          openPipFacingOutward: 5,
         },
         {
           tileId: "tile-6-5",
           side: "left",
           inwardTileSide: "sideB",
-          openPipFacingOutward: 5,
+          openPipFacingOutward: 6,
         },
         {
           tileId: "tile-4-4",

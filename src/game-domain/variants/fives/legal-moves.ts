@@ -137,7 +137,7 @@ const getMovesForEmptyBoard = (
       tileId,
       side: "left",
       inwardTileSide: "sideA",
-      openPipFacingOutward: tile.sideA,
+      openPipFacingOutward: tile.sideB,
     });
 
     if (tile.sideA !== tile.sideB) {
@@ -145,7 +145,7 @@ const getMovesForEmptyBoard = (
         tileId,
         side: "left",
         inwardTileSide: "sideB",
-        openPipFacingOutward: tile.sideB,
+        openPipFacingOutward: tile.sideA,
       });
     }
   }
