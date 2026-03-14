@@ -17,7 +17,7 @@ type ValidateFivesMoveInput = Readonly<{
   handTileIds: readonly TileId[];
   tileCatalog: Readonly<Record<TileId, Tile>>;
   intent: FivesMoveSelection;
-  isOpeningMove: boolean;
+  requiresOpeningDouble: boolean;
 }>;
 
 export type ValidateFivesMoveResult = Readonly<{
@@ -48,7 +48,7 @@ export const validateFivesMove = (
     board: input.board,
     handTileIds: input.handTileIds,
     tileCatalog: input.tileCatalog,
-    isOpeningMove: input.isOpeningMove,
+    requiresOpeningDouble: input.requiresOpeningDouble,
   });
 
   const tile = input.tileCatalog[input.intent.tileId];

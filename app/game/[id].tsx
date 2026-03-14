@@ -5,8 +5,8 @@ import { OpponentHand } from "@/components/game/OpponentHand";
 import { PlayerHand } from "@/components/game/PlayerHand";
 import { getComputerAction } from "@/src/game-domain/computer-player";
 import {
-  GameEvent,
   GameEndedEvent,
+  GameEvent,
   RoundEndedEvent,
   TileDrawnEvent,
   TilePlayedEvent,
@@ -128,7 +128,8 @@ function GameView({
       board: currentRound.board,
       handTileIds: playerHandIds,
       tileCatalog,
-      isOpeningMove: currentRound.board.tiles.length === 0,
+      requiresOpeningDouble:
+        currentRound.roundNumber === 1 && currentRound.board.tiles.length === 0,
     }).moves;
   }, [currentRound, playerHandIds, tileCatalog]);
 
@@ -481,7 +482,10 @@ function GameView({
       />
 
       <View style={styles.content}>
-        <OpponentHand count={opponentHandCount} isTurn={game.turn?.activePlayerId === player2Id} />
+        <OpponentHand
+          count={opponentHandCount}
+          isTurn={game.turn?.activePlayerId === player2Id}
+        />
 
         <View style={styles.boneyardWrapper}>
           <BoneyardIndicator count={boneyardCount} />
@@ -489,7 +493,7 @@ function GameView({
 
         <View ref={viewRef} style={styles.boardContainer} onLayout={onLayout}>
           <BoardArea
-            board={currentRound.board}
+            geometry={geometry}
             transform={transform}
             previewGeometry={previewGeometry}
             activeSnap={activeSnap}

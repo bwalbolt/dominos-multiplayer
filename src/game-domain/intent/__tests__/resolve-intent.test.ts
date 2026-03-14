@@ -62,6 +62,7 @@ describe("resolve-intent", () => {
       gameId,
       roundId,
       playerId,
+      requiresOpeningDouble: false,
       expectedEventSeq: 3,
       idempotencyKey,
       board: boardWithOpenSixes,
@@ -85,6 +86,7 @@ describe("resolve-intent", () => {
       gameId,
       roundId,
       playerId,
+      requiresOpeningDouble: false,
       expectedEventSeq: 3,
       idempotencyKey,
       board: boardWithOpenSixes,
@@ -129,6 +131,7 @@ describe("resolve-intent", () => {
       gameId,
       roundId,
       playerId,
+      requiresOpeningDouble: false,
       expectedEventSeq: 3,
       idempotencyKey,
       board: boardWithOpenSixes,
@@ -162,6 +165,7 @@ describe("resolve-intent", () => {
       gameId,
       roundId,
       playerId,
+      requiresOpeningDouble: true,
       expectedEventSeq: 1,
       idempotencyKey,
       board: emptyBoard,
@@ -199,6 +203,7 @@ describe("resolve-intent", () => {
       gameId,
       roundId,
       playerId,
+      requiresOpeningDouble: true,
       expectedEventSeq: 1,
       idempotencyKey,
       board: emptyBoard,
@@ -222,6 +227,44 @@ describe("resolve-intent", () => {
         ok: false,
         action: "return_to_hand",
         code: "opening_double_required",
+      }),
+    );
+  });
+
+  it("creates a later-round opening intent for a non-double on an empty board", () => {
+    const result = resolveMoveIntent({
+      gameId,
+      roundId,
+      playerId,
+      requiresOpeningDouble: false,
+      expectedEventSeq: 1,
+      idempotencyKey,
+      board: emptyBoard,
+      handTileIds: ["tile-6-5" as TileId],
+      tileCatalog,
+      draggedTileId: "tile-6-5" as TileId,
+      snapResolution: createSnapResolution({
+        anchor: {
+          id: "initial",
+          ownerTileId: null,
+          attachmentPoint: { x: 0, y: 0 },
+          direction: "right",
+          openPip: 0,
+        },
+        distance: 0,
+      }),
+    });
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        ok: true,
+        action: "submit",
+        intent: expect.objectContaining({
+          tileId: "tile-6-5",
+          side: "left",
+          openPipFacingOutward: 6,
+          anchorId: null,
+        }),
       }),
     );
   });

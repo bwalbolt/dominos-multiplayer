@@ -64,7 +64,7 @@ export const evaluateRoundResolution = (
         board: round.board,
         handTileIds: round.handsByPlayerId[playerId].tileIds,
         tileCatalog,
-        isOpeningMove: false, // If it's blocked, it's definitely not the opening move
+        requiresOpeningDouble: false,
       }),
     );
 

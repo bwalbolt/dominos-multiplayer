@@ -58,49 +58,27 @@ describe("spinner-branches", () => {
     expect(geometry.anchors.some(a => a.direction === "down")).toBe(true);
   });
 
-  it("should correctly attach up/down branches to the spinner even if it's not the first tile", () => {
-    // This tests the branch root logic.
-    // In our current reconstruct it's always the first tile, but we should be robust.
-    // 5-4 (root) -> 4-4 (spinner, played on right) -> 4-6 (played on up of spinner)
-    
+  it("keeps later doubles on a line board as regular arm tiles", () => {
     const rootTile: Tile = { id: "root" as TileId, sideA: 5 as DominoPip, sideB: 4 as DominoPip };
-    const spinnerTile: Tile = { id: "spin" as TileId, sideA: 4 as DominoPip, sideB: 4 as DominoPip };
-    const upTile: Tile = { id: "upT" as TileId, sideA: 4 as DominoPip, sideB: 6 as DominoPip };
+    const laterDouble: Tile = { id: "double" as TileId, sideA: 4 as DominoPip, sideB: 4 as DominoPip };
 
     const board: BoardState = {
       layoutDirection: "horizontal",
-      spinnerTileId: spinnerTile.id,
+      spinnerTileId: null,
       openEnds: [
         { side: "left", pip: 5, tileId: rootTile.id },
-        { side: "right", pip: 4, tileId: spinnerTile.id },
-        { side: "up", pip: 6, tileId: upTile.id },
-        { side: "down", pip: 4, tileId: spinnerTile.id }
+        { side: "right", pip: 4, tileId: laterDouble.id },
       ],
       tiles: [
         { tile: rootTile, playedBy: player1, placedAtSeq: 1, side: "left", openPipFacingOutward: 5 },
-        { tile: spinnerTile, playedBy: player1, placedAtSeq: 2, side: "right", openPipFacingOutward: 4 },
-        { tile: upTile, playedBy: player1, placedAtSeq: 3, side: "up", openPipFacingOutward: 6 }
-      ]
+        { tile: laterDouble, playedBy: player1, placedAtSeq: 2, side: "right", openPipFacingOutward: 4 },
+      ],
     };
 
     const geometry = calculateBoardGeometry(board);
-    
-    const rootGeom = geometry.placedTiles.find(t => t.tileId === "root")!;
-    const spinGeom = geometry.placedTiles.find(t => t.tileId === "spin")!;
-    const upGeom = geometry.placedTiles.find(t => t.tileId === "upT")!;
 
-    // root is 5|4 horizontal at 0,0. sideB (4) is on right.
-    // width 112. edge at 56.
-    expect(rootGeom.center.x).toBe(0);
-    
-    // spin is 4|4 vertical on the right of root.
-    // root right edge is at 56. spin center is 56 + 28 = 84.
-    expect(spinGeom.center.x).toBe(84);
-    expect(spinGeom.center.y).toBe(0);
-
-    // up branch starts FROM spin (the spinner), not from root.
-    // spin top edge is at y = -56. upT center is -56 - 56 = -112.
-    expect(upGeom.center.x).toBe(84); // Same X as spinner
-    expect(upGeom.center.y).toBe(-112);
+    expect(geometry.anchors).toHaveLength(2);
+    expect(geometry.anchors.some((anchor) => anchor.direction === "up")).toBe(false);
+    expect(geometry.anchors.some((anchor) => anchor.direction === "down")).toBe(false);
   });
 });

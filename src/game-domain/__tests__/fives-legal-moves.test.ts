@@ -40,7 +40,7 @@ describe("Fives legality fixtures", () => {
         side: "left",
         openPipFacingOutward: 5,
       },
-      isOpeningMove: true,
+      requiresOpeningDouble: true,
     });
 
     expect(result.legalMoveEvaluation.requiredOpeningTileId).toBe(
@@ -88,7 +88,7 @@ describe("Fives legality fixtures", () => {
         side: "up",
         openPipFacingOutward: 3,
       },
-      isOpeningMove: false,
+      requiresOpeningDouble: false,
     });
 
     expect(success.legalMoveEvaluation.spinnerBranches).toEqual({
@@ -159,13 +159,43 @@ describe("Fives legality fixtures", () => {
         side: "up",
         openPipFacingOutward: 6,
       },
-      isOpeningMove: false,
+      requiresOpeningDouble: false,
     });
 
     expect(wrongOrientation.validation).toEqual({
       ok: false,
       code: "illegal_orientation",
       message: "Tile orientation does not satisfy the open-end pip constraint.",
+    });
+  });
+
+  it("allows a later round to open with a non-double on an empty board", () => {
+    const result = validateFivesMove({
+      board: {
+        layoutDirection: "horizontal",
+        spinnerTileId: null,
+        openEnds: [],
+        tiles: [],
+      },
+      handTileIds: [getFixtureTileId(2, 5)],
+      tileCatalog: FIXTURE_TILE_CATALOG_BY_ID,
+      intent: {
+        tileId: getFixtureTileId(2, 5),
+        side: "left",
+        openPipFacingOutward: 5,
+      },
+      requiresOpeningDouble: false,
+    });
+
+    expect(result.legalMoveEvaluation.requiredOpeningTileId).toBeNull();
+    expect(result.validation).toEqual({
+      ok: true,
+      value: {
+        tileId: getFixtureTileId(2, 5),
+        side: "left",
+        inwardTileSide: "sideB",
+        openPipFacingOutward: 5,
+      },
     });
   });
 });

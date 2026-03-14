@@ -31,6 +31,7 @@ describe("Computer Player (T1)", () => {
     board: BoardState,
     handTileIds: TileId[],
     boneyardRemaining: number = 0,
+    roundNumber: number = 1,
   ): ReconstructionState => ({
     game: {
       gameId: "test-game" as any,
@@ -46,6 +47,7 @@ describe("Computer Player (T1)", () => {
         },
       } as any,
       currentRound: {
+        roundNumber,
         status: "active",
         board,
         boneyard: { remainingCount: boneyardRemaining },
@@ -78,6 +80,21 @@ describe("Computer Player (T1)", () => {
       kind: "play",
       move: expect.objectContaining({
         tileId: "tile-5-5",
+      }),
+    });
+  });
+
+  test("Later-round opening: should allow a non-double on an empty board", () => {
+    const hand = ["tile-6-5"] as TileId[];
+    const recon = createMockReconstruction(emptyBoard, hand, 0, 2);
+    const action = getComputerAction(recon, computer);
+
+    expect(action).toEqual({
+      kind: "play",
+      move: expect.objectContaining({
+        tileId: "tile-6-5",
+        side: "left",
+        openPipFacingOutward: 6,
       }),
     });
   });

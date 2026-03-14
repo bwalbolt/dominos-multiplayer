@@ -7,6 +7,7 @@ import {
 import { LayoutAnchor, CameraTransform, Point, PlacedTileGeometry } from "./types";
 import { resolveSnapTarget } from "./snap";
 import { projectPlacement } from "./project-placement";
+import { domino } from "../../../theme/tokens";
 
 export function useBoardInteraction(
   anchors: readonly LayoutAnchor[],
@@ -138,7 +139,7 @@ function DraggedTileGeometry(
     value2: tile.sideB,
     center: dragPosition,
     rotationDeg: isDouble ? 0 : 90,
-    width: isDouble ? 56 : 112,
-    height: isDouble ? 112 : 56,
+    width: isDouble ? domino.width : domino.height,
+    height: isDouble ? domino.height : domino.width,
   };
 }

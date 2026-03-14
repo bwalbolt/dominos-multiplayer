@@ -25,7 +25,7 @@ describe("Fives Legal Moves (T1)", () => {
         board: emptyBoard,
         handTileIds,
         tileCatalog,
-        isOpeningMove: true,
+        requiresOpeningDouble: true,
       });
 
       expect(result.requiredOpeningTileId).toBe("tile-5-5");
@@ -41,7 +41,7 @@ describe("Fives Legal Moves (T1)", () => {
         board: emptyBoard,
         handTileIds,
         tileCatalog,
-        isOpeningMove: true,
+        requiresOpeningDouble: true,
       });
 
       expect(result.requiredOpeningTileId).toBeNull();
@@ -74,7 +74,7 @@ describe("Fives Legal Moves (T1)", () => {
         board: boardWithSpinner,
         handTileIds,
         tileCatalog,
-        isOpeningMove: false,
+        requiresOpeningDouble: false,
       });
 
       expect(result.moves).toContainEqual(
@@ -132,13 +132,45 @@ describe("Fives Legal Moves (T1)", () => {
         board: boardWithArms,
         handTileIds,
         tileCatalog,
-        isOpeningMove: false,
+        requiresOpeningDouble: false,
       });
 
       // Should include up/down because both arms exist
       const sides = result.moves.map((m) => m.side);
       expect(sides).toContain("up");
       expect(sides).toContain("down");
+    });
+
+    it("allows any tile to open a later round on an empty board", () => {
+      const handTileIds = ["tile-6-5", "tile-4-4"] as TileId[];
+      const result = evaluateFivesLegalMoves({
+        board: emptyBoard,
+        handTileIds,
+        tileCatalog,
+        requiresOpeningDouble: false,
+      });
+
+      expect(result.requiredOpeningTileId).toBeNull();
+      expect(result.moves).toEqual([
+        {
+          tileId: "tile-6-5",
+          side: "left",
+          inwardTileSide: "sideA",
+          openPipFacingOutward: 6,
+        },
+        {
+          tileId: "tile-6-5",
+          side: "left",
+          inwardTileSide: "sideB",
+          openPipFacingOutward: 5,
+        },
+        {
+          tileId: "tile-4-4",
+          side: "left",
+          inwardTileSide: "sideA",
+          openPipFacingOutward: 4,
+        },
+      ]);
     });
   });
 });

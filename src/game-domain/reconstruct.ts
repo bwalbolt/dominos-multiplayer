@@ -758,7 +758,8 @@ const enrichDerivedState = (
     board: game.currentRound.board,
     handTileIds: activeHand.tileIds,
     tileCatalog,
-    isOpeningMove: game.currentRound.board.tiles.length === 0,
+    requiresOpeningDouble:
+      game.currentRound.roundNumber === 1 && game.currentRound.board.tiles.length === 0,
   });
 
   const playableTileIds = new Set(legalMoves.moves.map((m) => m.tileId));

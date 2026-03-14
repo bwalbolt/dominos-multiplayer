@@ -14,7 +14,7 @@ type EvaluateFivesLegalMovesInput = Readonly<{
   board: BoardState;
   handTileIds: readonly TileId[];
   tileCatalog: Readonly<Record<TileId, Tile>>;
-  isOpeningMove: boolean;
+  requiresOpeningDouble: boolean;
 }>;
 
 export type FivesLegalMoveEvaluation = Readonly<{
@@ -120,6 +120,43 @@ const getMovesForOpeningTurn = (
   };
 };
 
+const getMovesForEmptyBoard = (
+  handTileIds: readonly TileId[],
+  tileCatalog: Readonly<Record<TileId, Tile>>,
+): FivesLegalMoveEvaluation => {
+  const moves: FivesLegalMove[] = [];
+
+  for (const tileId of handTileIds) {
+    const tile = tileCatalog[tileId];
+
+    if (!tile) {
+      continue;
+    }
+
+    moves.push({
+      tileId,
+      side: "left",
+      inwardTileSide: "sideA",
+      openPipFacingOutward: tile.sideA,
+    });
+
+    if (tile.sideA !== tile.sideB) {
+      moves.push({
+        tileId,
+        side: "left",
+        inwardTileSide: "sideB",
+        openPipFacingOutward: tile.sideB,
+      });
+    }
+  }
+
+  return {
+    moves,
+    requiredOpeningTileId: null,
+    spinnerBranches: createClosedBranchStatus(),
+  };
+};
+
 const getMovesForBoardState = (
   board: BoardState,
   handTileIds: readonly TileId[],
@@ -174,8 +211,12 @@ const getMovesForBoardState = (
 export const evaluateFivesLegalMoves = (
   input: EvaluateFivesLegalMovesInput,
 ): FivesLegalMoveEvaluation => {
-  if (input.isOpeningMove || input.board.tiles.length === 0) {
+  if (input.requiresOpeningDouble) {
     return getMovesForOpeningTurn(input.handTileIds, input.tileCatalog);
+  }
+
+  if (input.board.tiles.length === 0) {
+    return getMovesForEmptyBoard(input.handTileIds, input.tileCatalog);
   }
 
   return getMovesForBoardState(input.board, input.handTileIds, input.tileCatalog);

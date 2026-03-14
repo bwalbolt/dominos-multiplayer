@@ -101,7 +101,7 @@ export const getComputerAction = (
     board: round.board,
     handTileIds: hand.tileIds,
     tileCatalog,
-    isOpeningMove: round.board.tiles.length === 0,
+    requiresOpeningDouble: round.roundNumber === 1 && round.board.tiles.length === 0,
   });
 
   if (evaluation.moves.length > 0) {
