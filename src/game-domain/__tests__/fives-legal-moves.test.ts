@@ -3,15 +3,20 @@ import {
   validateFivesMove,
   type GameState,
 } from "../index";
+import { calculateBoardGeometry } from "../layout/anchors";
 import {
+  buildFixtureEventLog,
+  createGameStartedStep,
+  createRoundStartedStep,
+  createTilePlayedStep,
   FIXTURE_IDS,
-  FIXTURE_TILE_CATALOG,
   FIXTURE_TILE_CATALOG_BY_ID,
   getFixtureTileId,
 } from "./fixtures/builders";
-import { OPENING_EVENT_LOG, SPINNER_EXPANSION_EVENT_LOG } from "./fixtures/event-logs";
-import { buildFixtureEventLog, createGameStartedStep, createRoundStartedStep, createTilePlayedStep } from "./fixtures/builders";
-import { calculateBoardGeometry } from "../layout/anchors";
+import {
+  OPENING_EVENT_LOG,
+  SPINNER_EXPANSION_EVENT_LOG,
+} from "./fixtures/event-logs";
 
 const requireGame = (game: GameState | null): GameState => {
   if (game === null) {
@@ -25,7 +30,8 @@ describe("Fives legality fixtures", () => {
   it("requires the highest double on the opening turn", () => {
     const state = reconstructGameState(OPENING_EVENT_LOG.slice(0, 2));
     const game = requireGame(state.game);
-    const openingHand = game.currentRound?.handsByPlayerId[FIXTURE_IDS.playerOneId];
+    const openingHand =
+      game.currentRound?.handsByPlayerId[FIXTURE_IDS.playerOneId];
 
     expect(openingHand).toBeDefined();
 

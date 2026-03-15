@@ -8,7 +8,14 @@ import { getSpinnerConnectedSideCount } from "../../util/spinner";
  * @param board The current state of the board
  * @returns The score awarded (multiple of 5, or 0)
  */
-export const calculateFivesBoardScore = (board: BoardState): number => {
+/**
+ * Calculates the total pips on all open ends of the board.
+ * This is the value used to determine if a score should be awarded in Fives.
+ *
+ * @param board The current state of the board
+ * @returns The total sum of pips on open ends
+ */
+export const calculateOpenEndsTotal = (board: BoardState): number => {
   if (board.tiles.length === 0) {
     return 0;
   }
@@ -52,9 +59,23 @@ export const calculateFivesBoardScore = (board: BoardState): number => {
     }
   }
 
+  return totalPips;
+};
+
+/**
+ * Calculates the score for a given board state in Fives.
+ * Scoring occurs when the sum of all open ends is a multiple of 5.
+ *
+ * @param board The current state of the board
+ * @returns The score awarded (multiple of 5, or 0)
+ */
+export const calculateFivesBoardScore = (board: BoardState): number => {
+  const totalPips = calculateOpenEndsTotal(board);
+
   if (totalPips > 0 && totalPips % 5 === 0) {
     return totalPips;
   }
 
   return 0;
 };
+

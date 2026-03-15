@@ -1,6 +1,7 @@
 import { BoardArea } from "@/components/game/BoardArea";
 import { BoardHeader } from "@/components/game/BoardHeader";
 import { BoneyardIndicator } from "@/components/game/BoneyardIndicator";
+import { OpenEndsIndicator } from "@/components/game/OpenEndsIndicator";
 import { OpponentHand } from "@/components/game/OpponentHand";
 import { PlayerHand } from "@/components/game/PlayerHand";
 import { getComputerAction } from "@/src/game-domain/computer-player";
@@ -22,7 +23,10 @@ import {
   ReconstructionState,
   TileId,
 } from "@/src/game-domain/types";
-import { evaluateFivesLegalMoves } from "@/src/game-domain/variants/fives";
+import {
+  calculateOpenEndsTotal,
+  evaluateFivesLegalMoves,
+} from "@/src/game-domain/variants/fives";
 import {
   checkGameWinner,
   evaluateRoundResolution,
@@ -114,6 +118,9 @@ function GameView({
   const opponentHandCount =
     currentRound.handsByPlayerId[player2Id]?.handCount || 0;
   const boneyardCount = currentRound.boneyard.remainingCount;
+  const openEndsTotal = useMemo(() => {
+    return calculateOpenEndsTotal(currentRound.board);
+  }, [currentRound.board]);
   const isPlayerTurn = game.turn?.activePlayerId === player1Id;
 
   const opponentProfile = game.players.find(
@@ -493,6 +500,7 @@ function GameView({
         />
 
         <View style={styles.boneyardWrapper}>
+          <OpenEndsIndicator total={openEndsTotal} />
           <BoneyardIndicator count={boneyardCount} />
         </View>
 
@@ -698,7 +706,7 @@ const styles = StyleSheet.create((theme) => ({
   boneyardWrapper: {
     position: "absolute",
     left: 0,
-    top: 40, // Below header
+    top: 32, // Below header
     zIndex: 10,
   },
   drawButtonContainer: {
