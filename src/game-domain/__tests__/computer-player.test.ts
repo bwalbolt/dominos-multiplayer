@@ -94,7 +94,8 @@ describe("Computer Player (T1)", () => {
       move: expect.objectContaining({
         tileId: "tile-6-5",
         side: "left",
-        openPipFacingOutward: 6,
+        inwardTileSide: "sideA",
+        openPipFacingOutward: 5,
       }),
     });
   });

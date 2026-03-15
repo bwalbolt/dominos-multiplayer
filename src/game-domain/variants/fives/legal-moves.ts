@@ -7,6 +7,7 @@ import type {
   Tile,
   TileId,
 } from "../../types";
+import { getSpinnerBranchUnlocks } from "../../util/spinner";
 
 const CHAIN_SIDES: readonly ChainSide[] = ["left", "right", "up", "down"];
 
@@ -70,20 +71,13 @@ export const getFivesSpinnerBranchStatus = (
     };
   }
 
-  const nonSpinnerTiles = board.tiles.filter(
-    (playedTile) => playedTile.tile.id !== board.spinnerTileId,
-  );
-  const hasLeftArm = nonSpinnerTiles.some((playedTile) => playedTile.side === "left");
-  const hasRightArm = nonSpinnerTiles.some((playedTile) => playedTile.side === "right");
-  const spinnerCrossUnlocked = hasLeftArm && hasRightArm;
+  const { up, down } = getSpinnerBranchUnlocks(board);
 
   return {
     left: openEndsBySide.left === undefined ? "closed" : "open",
     right: openEndsBySide.right === undefined ? "closed" : "open",
-    up:
-      spinnerCrossUnlocked && openEndsBySide.up !== undefined ? "open" : "closed",
-    down:
-      spinnerCrossUnlocked && openEndsBySide.down !== undefined ? "open" : "closed",
+    up: up && openEndsBySide.up !== undefined ? "open" : "closed",
+    down: down && openEndsBySide.down !== undefined ? "open" : "closed",
   };
 };
 

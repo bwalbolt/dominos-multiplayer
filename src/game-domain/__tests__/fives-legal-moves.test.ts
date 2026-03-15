@@ -5,10 +5,13 @@ import {
 } from "../index";
 import {
   FIXTURE_IDS,
+  FIXTURE_TILE_CATALOG,
   FIXTURE_TILE_CATALOG_BY_ID,
   getFixtureTileId,
 } from "./fixtures/builders";
 import { OPENING_EVENT_LOG, SPINNER_EXPANSION_EVENT_LOG } from "./fixtures/event-logs";
+import { buildFixtureEventLog, createGameStartedStep, createRoundStartedStep, createTilePlayedStep } from "./fixtures/builders";
+import { calculateBoardGeometry } from "../layout/anchors";
 
 const requireGame = (game: GameState | null): GameState => {
   if (game === null) {
@@ -197,5 +200,54 @@ describe("Fives legality fixtures", () => {
         openPipFacingOutward: 5,
       },
     });
+  });
+
+  it("identifies the first double as a spinner even if it is not the first tile in the round", () => {
+    const tile16 = getFixtureTileId(1, 6);
+    const tile66 = getFixtureTileId(6, 6);
+    const tile26 = getFixtureTileId(2, 6);
+
+    const eventLog = buildFixtureEventLog([
+      createGameStartedStep(),
+      createRoundStartedStep({
+        handsByPlayerId: {
+          [FIXTURE_IDS.playerOneId]: [tile16, tile26],
+          [FIXTURE_IDS.playerTwoId]: [tile66],
+        },
+      }),
+      createTilePlayedStep({
+        playerId: FIXTURE_IDS.playerOneId,
+        tileId: tile16,
+        side: "left",
+        openPipFacingOutward: 1,
+      }),
+      createTilePlayedStep({
+        playerId: FIXTURE_IDS.playerTwoId,
+        tileId: tile66,
+        side: "right",
+        openPipFacingOutward: 6,
+      }),
+      createTilePlayedStep({
+        playerId: FIXTURE_IDS.playerOneId,
+        tileId: tile26,
+        side: "right",
+        openPipFacingOutward: 2,
+      }),
+    ]);
+
+    const state = reconstructGameState(eventLog);
+    const game = requireGame(state.game);
+    const board = game.currentRound!.board;
+
+    expect(board.spinnerTileId).toBe(tile66);
+
+    // The untouched up/down spinner faces are tracked on the board.
+    expect(board.openEnds.some((oe) => oe.side === "up")).toBe(true);
+    expect(board.openEnds.some((oe) => oe.side === "down")).toBe(true);
+
+    // Once both the left and right spinner sides are connected, up/down unlock for play.
+    const geometry = calculateBoardGeometry(board);
+    expect(geometry.anchors.some((a) => a.direction === "up")).toBe(true);
+    expect(geometry.anchors.some((a) => a.direction === "down")).toBe(true);
   });
 });

@@ -6,9 +6,11 @@ describe("Fives Legal Moves (T1)", () => {
     ["tile-6-6" as TileId]: { id: "tile-6-6" as TileId, sideA: 6, sideB: 6 },
     ["tile-5-5" as TileId]: { id: "tile-5-5" as TileId, sideA: 5, sideB: 5 },
     ["tile-6-5" as TileId]: { id: "tile-6-5" as TileId, sideA: 6, sideB: 5 },
+    ["tile-6-2" as TileId]: { id: "tile-6-2" as TileId, sideA: 6, sideB: 2 },
     ["tile-5-4" as TileId]: { id: "tile-5-4" as TileId, sideA: 5, sideB: 4 },
     ["tile-4-4" as TileId]: { id: "tile-4-4" as TileId, sideA: 4, sideB: 4 },
     ["tile-1-1" as TileId]: { id: "tile-1-1" as TileId, sideA: 1, sideB: 1 },
+    ["tile-1-6" as TileId]: { id: "tile-1-6" as TileId, sideA: 1, sideB: 6 },
   };
 
   const emptyBoard: BoardState = {
@@ -139,6 +141,115 @@ describe("Fives Legal Moves (T1)", () => {
       const sides = result.moves.map((m) => m.side);
       expect(sides).toContain("up");
       expect(sides).toContain("down");
+    });
+
+    it("keeps up/down closed until the spinner has left and right connections, even when the spinner is introduced later", () => {
+      const boardWithLaterSpinner: BoardState = {
+        layoutDirection: "horizontal",
+        spinnerTileId: "tile-6-6" as TileId,
+        openEnds: [
+          { side: "left", pip: 1, tileId: "tile-1-6" as TileId },
+          { side: "right", pip: 6, tileId: "tile-6-6" as TileId },
+          { side: "up", pip: 6, tileId: "tile-6-6" as TileId },
+          { side: "down", pip: 6, tileId: "tile-6-6" as TileId },
+        ],
+        tiles: [
+          {
+            tile: tileCatalog["tile-1-6" as TileId],
+            playedBy: "p1" as any,
+            placedAtSeq: 1,
+            side: "left",
+            openPipFacingOutward: 1,
+          },
+          {
+            tile: tileCatalog["tile-6-6" as TileId],
+            playedBy: "p2" as any,
+            placedAtSeq: 2,
+            side: "right",
+            openPipFacingOutward: 6,
+          },
+        ],
+      };
+
+      const result = evaluateFivesLegalMoves({
+        board: boardWithLaterSpinner,
+        handTileIds: ["tile-6-2", "tile-1-1"] as TileId[],
+        tileCatalog,
+        requiresOpeningDouble: false,
+      });
+
+      const sidesForSixTwo = result.moves
+        .filter((move) => move.tileId === ("tile-6-2" as TileId))
+        .map((move) => move.side)
+        .sort();
+
+      expect(result.spinnerBranches).toEqual({
+        left: "open",
+        right: "open",
+        up: "closed",
+        down: "closed",
+      });
+      expect(sidesForSixTwo).toEqual(["right"]);
+      expect(result.moves).toContainEqual(
+        expect.objectContaining({
+          tileId: "tile-1-1",
+          side: "left",
+          openPipFacingOutward: 1,
+        }),
+      );
+    });
+
+    it("opens up/down once a later spinner has branches on both left and right", () => {
+      const boardWithConnectedLaterSpinner: BoardState = {
+        layoutDirection: "horizontal",
+        spinnerTileId: "tile-6-6" as TileId,
+        openEnds: [
+          { side: "left", pip: 1, tileId: "tile-1-6" as TileId },
+          { side: "right", pip: 2, tileId: "tile-6-2" as TileId },
+          { side: "up", pip: 6, tileId: "tile-6-6" as TileId },
+          { side: "down", pip: 6, tileId: "tile-6-6" as TileId },
+        ],
+        tiles: [
+          {
+            tile: tileCatalog["tile-1-6" as TileId],
+            playedBy: "p1" as any,
+            placedAtSeq: 1,
+            side: "left",
+            openPipFacingOutward: 1,
+          },
+          {
+            tile: tileCatalog["tile-6-6" as TileId],
+            playedBy: "p2" as any,
+            placedAtSeq: 2,
+            side: "right",
+            openPipFacingOutward: 6,
+          },
+          {
+            tile: tileCatalog["tile-6-2" as TileId],
+            playedBy: "p1" as any,
+            placedAtSeq: 3,
+            side: "right",
+            openPipFacingOutward: 2,
+          },
+        ],
+      };
+
+      const result = evaluateFivesLegalMoves({
+        board: boardWithConnectedLaterSpinner,
+        handTileIds: ["tile-6-5"] as TileId[],
+        tileCatalog,
+        requiresOpeningDouble: false,
+      });
+
+      const playableSides = result.moves.map((move) => move.side).sort();
+
+      expect(result.spinnerBranches).toEqual({
+        left: "open",
+        right: "open",
+        up: "open",
+        down: "open",
+      });
+      expect(playableSides).toEqual(["down", "up"]);
     });
 
     it("allows any tile to open a later round on an empty board", () => {

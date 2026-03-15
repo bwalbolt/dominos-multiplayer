@@ -12,6 +12,7 @@ import type {
 import type {
   BoardState,
   BoneyardState,
+  ChainSide,
   GameParticipants,
   GameState,
   PlayerHandState,
@@ -393,14 +394,20 @@ const applyTilePlayedEvent = (
     event.side === "left"
       ? [playedTile, ...currentRound.board.tiles]
       : [...currentRound.board.tiles, playedTile];
+
+  const isFirstDouble =
+    currentRound.board.spinnerTileId === null &&
+    tileInstance.tile.sideA === tileInstance.tile.sideB;
+
+  const nextSpinnerTileId = isFirstDouble
+    ? tileInstance.tile.id
+    : currentRound.board.spinnerTileId;
+
   const board =
     boardTiles.length === 1
       ? {
           ...currentRound.board,
-          spinnerTileId:
-            tileInstance.tile.sideA === tileInstance.tile.sideB
-              ? tileInstance.tile.id
-              : null,
+          spinnerTileId: nextSpinnerTileId,
           openEnds: getInitialOpenEndsForTile(
             tileInstance.tile,
             event.side,
@@ -410,11 +417,30 @@ const applyTilePlayedEvent = (
         }
       : {
           ...currentRound.board,
-          openEnds: upsertOpenEnd(currentRound.board.openEnds, {
-            side: event.side,
-            pip: event.openPipFacingOutward,
-            tileId: tileInstance.tile.id,
-          }),
+          spinnerTileId: nextSpinnerTileId,
+          openEnds: isFirstDouble
+            ? [
+                ...upsertOpenEnd(currentRound.board.openEnds, {
+                  side: event.side,
+                  pip: event.openPipFacingOutward,
+                  tileId: tileInstance.tile.id,
+                }),
+                {
+                  side: "up" as ChainSide,
+                  pip: tileInstance.tile.sideA,
+                  tileId: tileInstance.tile.id,
+                },
+                {
+                  side: "down" as ChainSide,
+                  pip: tileInstance.tile.sideA,
+                  tileId: tileInstance.tile.id,
+                },
+              ]
+            : upsertOpenEnd(currentRound.board.openEnds, {
+                side: event.side,
+                pip: event.openPipFacingOutward,
+                tileId: tileInstance.tile.id,
+              }),
           tiles: boardTiles,
         };
   const boardOrder = getBoardOrder(currentRound.board, event.side);

@@ -434,11 +434,16 @@ function GameView({
         doubleFive,
         "tile-0-0" as TileId,
         "tile-1-1" as TileId,
+        "tile-2-2" as TileId,
+        "tile-3-3" as TileId,
+        "tile-4-4" as TileId,
+        "tile-6-6" as TileId,
+        "tile-0-1" as TileId,
       ],
       forcePlayer2Hand: [
         doubleFour,
-        "tile-2-2" as TileId,
-        "tile-3-3" as TileId,
+        "tile-2-3" as TileId,
+        "tile-3-4" as TileId,
       ],
     });
     newEvents.push(nextRoundStarted);

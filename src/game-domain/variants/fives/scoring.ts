@@ -1,4 +1,5 @@
 import type { BoardState, TileId } from "../../types";
+import { getSpinnerConnectedSideCount } from "../../util/spinner";
 
 /**
  * Calculates the score for a given board state in Fives.
@@ -13,20 +14,12 @@ export const calculateFivesBoardScore = (board: BoardState): number => {
   }
 
   const spinnerTileId = board.spinnerTileId;
-  const numSpinnerBranches = spinnerTileId
-    ? new Set(
-        board.tiles
-          .filter((t) => t.tile.id !== spinnerTileId)
-          .map((t) => t.side),
-      ).size
-    : 0;
-
+  const spinnerConnectedSideCount = getSpinnerConnectedSideCount(board);
   let totalPips = 0;
-  const processedTiles = new Set<TileId>();
+  const processedNonSpinnerDoubles = new Set<TileId>();
 
   for (const oe of board.openEnds) {
     if (oe.tileId === null) continue;
-    if (processedTiles.has(oe.tileId)) continue;
 
     const playedTile = board.tiles.find((t) => t.tile.id === oe.tileId);
     if (!playedTile) continue;
@@ -35,16 +28,27 @@ export const calculateFivesBoardScore = (board: BoardState): number => {
     const isDouble = tile.sideA === tile.sideB;
 
     if (oe.tileId === spinnerTileId) {
-      if (numSpinnerBranches < 2) {
-        totalPips += tile.sideA * 2;
-      }
-      processedTiles.add(oe.tileId);
-    } else if (isDouble) {
+      continue;
+    }
+
+    if (isDouble) {
       // Non-spinner double at an end always has exactly 1 branch
+      if (processedNonSpinnerDoubles.has(oe.tileId)) {
+        continue;
+      }
+
       totalPips += tile.sideA * 2;
-      processedTiles.add(oe.tileId);
+      processedNonSpinnerDoubles.add(oe.tileId);
     } else {
       totalPips += oe.pip;
+    }
+  }
+
+  if (spinnerTileId !== null && spinnerConnectedSideCount < 2) {
+    const spinnerTile = board.tiles.find((tile) => tile.tile.id === spinnerTileId);
+
+    if (spinnerTile) {
+      totalPips += spinnerTile.tile.sideA * 2;
     }
   }
 

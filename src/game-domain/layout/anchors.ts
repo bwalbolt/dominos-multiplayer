@@ -61,6 +61,7 @@ type ExtractedLayoutProblem = Readonly<{
   rootTile: PlayedTile;
   armTilesBySide: Readonly<Record<ChainSide, readonly PlayedTile[]>>;
   openEndsBySide: Readonly<Partial<Record<ChainSide, DominoPip>>>;
+  rootPipsBySide: Readonly<Partial<Record<ChainSide, DominoPip>>>;
 }>;
 
 type RuntimeArmState = Readonly<{
@@ -111,7 +112,20 @@ export function solveBoardLayout(
   const extracted = extractProblem(board, options?.viewport ?? null);
   const padding = options?.padding ?? DEFAULT_PADDING;
   const viewport = normalizeViewport(extracted.problem.viewport);
-  const rootCandidates = buildRootCandidates(extracted.problem.rootKind);
+  const matchingRootCandidates =
+    extracted.problem.rootKind === "spinner"
+      ? buildRootCandidates(extracted.problem.rootKind)
+      : buildRootCandidates(extracted.problem.rootKind).filter((candidate) =>
+          isCompatibleLineRootCandidate(
+            extracted.rootTile,
+            extracted.rootPipsBySide,
+            candidate,
+          ),
+        );
+  const rootCandidates =
+    matchingRootCandidates.length > 0
+      ? matchingRootCandidates
+      : buildRootCandidates(extracted.problem.rootKind);
   let best: BoardLayoutSolution | null = null;
 
   for (const rootCandidate of rootCandidates) {
@@ -300,9 +314,16 @@ function extractProblem(
   viewport: Size | null,
 ): ExtractedLayoutProblem {
   const sortedTiles = [...board.tiles].sort((left, right) => left.placedAtSeq - right.placedAtSeq);
-  const rootTile = sortedTiles[0];
+  const spinnerId = board.spinnerTileId;
+  const rootTileIndex = spinnerId 
+    ? sortedTiles.findIndex(t => t.tile.id === spinnerId)
+    : 0;
+  const rootTile = sortedTiles[rootTileIndex === -1 ? 0 : rootTileIndex];
   const rootKind: RootKind = rootTile.tile.sideA === rootTile.tile.sideB ? "spinner" : "line";
-  const armTilesBySide = groupTilesBySide(sortedTiles.slice(1));
+  
+  // armTiles are all tiles EXCEPT the root tile
+  const armTiles = sortedTiles.filter((_, index) => index !== (rootTileIndex === -1 ? 0 : rootTileIndex));
+  const armTilesBySide = groupTilesBySide(armTiles);
   const activeOpenEnds = getActiveOpenEnds(board);
   const openEndsBySide = activeOpenEnds.reduce<Partial<Record<ChainSide, DominoPip>>>(
     (accumulator, openEnd) => ({
@@ -317,6 +338,7 @@ function extractProblem(
     rootTile,
     armTilesBySide,
     openEndsBySide,
+    rootPipsBySide: getRootPipsBySide(armTilesBySide, board.openEnds),
     problem: {
       viewport,
       tileSize: {
@@ -405,10 +427,24 @@ function buildRootCandidates(rootKind: RootKind): readonly RootCandidate[] {
       },
     },
     {
+      rotationDeg: 270,
+      startHeadings: {
+        left: "left",
+        right: "right",
+      },
+    },
+    {
       rotationDeg: 0,
       startHeadings: {
         left: "up",
         right: "down",
+      },
+    },
+    {
+      rotationDeg: 0,
+      startHeadings: {
+        left: "down",
+        right: "up",
       },
     },
     {
@@ -418,7 +454,108 @@ function buildRootCandidates(rootKind: RootKind): readonly RootCandidate[] {
         right: "up",
       },
     },
+    {
+      rotationDeg: 180,
+      startHeadings: {
+        left: "up",
+        right: "down",
+      },
+    },
   ];
+}
+
+function getInwardPip(playedTile: PlayedTile): DominoPip {
+  if (playedTile.tile.sideA === playedTile.tile.sideB) {
+    return playedTile.tile.sideA;
+  }
+
+  return playedTile.tile.sideA === playedTile.openPipFacingOutward
+    ? playedTile.tile.sideB
+    : playedTile.tile.sideA;
+}
+
+function getPipAtDirection(
+  tile: PlayedTile["tile"],
+  rotationDeg: number,
+  direction: LayoutOrientation,
+): DominoPip | undefined {
+  switch (rotationDeg) {
+    case 0:
+      return direction === "up"
+        ? tile.sideA
+        : direction === "down"
+          ? tile.sideB
+          : undefined;
+    case 90:
+      return direction === "right"
+        ? tile.sideA
+        : direction === "left"
+          ? tile.sideB
+          : undefined;
+    case 180:
+      return direction === "down"
+        ? tile.sideA
+        : direction === "up"
+          ? tile.sideB
+          : undefined;
+    case 270:
+      return direction === "left"
+        ? tile.sideA
+        : direction === "right"
+          ? tile.sideB
+          : undefined;
+    default:
+      return undefined;
+  }
+}
+
+function getRootPipsBySide(
+  armTilesBySide: Readonly<Record<ChainSide, readonly PlayedTile[]>>,
+  boardOpenEnds: readonly BoardState["openEnds"][number][],
+): Partial<Record<ChainSide, DominoPip>> {
+  const rootPipsBySide: Partial<Record<ChainSide, DominoPip>> = {};
+
+  for (const side of ["left", "right"] as const) {
+    const firstArmTile = armTilesBySide[side][0];
+
+    if (firstArmTile) {
+      rootPipsBySide[side] = getInwardPip(firstArmTile);
+      continue;
+    }
+
+    const openEnd = boardOpenEnds.find((candidate) => candidate.side === side);
+    if (openEnd) {
+      rootPipsBySide[side] = openEnd.pip;
+    }
+  }
+
+  return rootPipsBySide;
+}
+
+function isCompatibleLineRootCandidate(
+  rootTile: PlayedTile,
+  rootPipsBySide: Readonly<Partial<Record<ChainSide, DominoPip>>>,
+  candidate: RootCandidate,
+): boolean {
+  for (const side of ["left", "right"] as const) {
+    const expectedPip = rootPipsBySide[side];
+
+    if (expectedPip === undefined) {
+      continue;
+    }
+
+    const direction = candidate.startHeadings[side];
+    if (!direction) {
+      return false;
+    }
+
+    const actualPip = getPipAtDirection(rootTile.tile, candidate.rotationDeg, direction);
+    if (actualPip !== expectedPip) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 function createRootPlacedTile(rootTile: PlayedTile, rotationDeg: number): SolverPlacedTile {
@@ -446,16 +583,7 @@ function createRootPlacedTile(rootTile: PlayedTile, rotationDeg: number): Solver
 }
 
 function resolveInwardTileSide(playedTile: PlayedTile): TileSide {
-  if (playedTile.tile.sideA === playedTile.tile.sideB) {
-    return "sideA";
-  }
-
-  const inwardPip =
-    playedTile.tile.sideA === playedTile.openPipFacingOutward
-      ? playedTile.tile.sideB
-      : playedTile.tile.sideA;
-
-  return playedTile.tile.sideA === inwardPip ? "sideA" : "sideB";
+  return playedTile.tile.sideA === getInwardPip(playedTile) ? "sideA" : "sideB";
 }
 
 function createPlacement(
