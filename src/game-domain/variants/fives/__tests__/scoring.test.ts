@@ -16,6 +16,7 @@ describe("Fives Scoring & Resolution", () => {
     ["tile-6-4" as TileId]: { id: "tile-6-4" as TileId, sideA: 6, sideB: 4 },
     ["tile-5-0" as TileId]: { id: "tile-5-0" as TileId, sideA: 5, sideB: 0 },
     ["tile-1-1" as TileId]: { id: "tile-1-1" as TileId, sideA: 1, sideB: 1 },
+    ["tile-3-6" as TileId]: { id: "tile-3-6" as TileId, sideA: 3, sideB: 6 },
   };
 
   describe("Board Scoring", () => {
@@ -104,6 +105,37 @@ describe("Fives Scoring & Resolution", () => {
         ],
       };
       expect(calculateFivesBoardScore(board)).toBe(0);
+    });
+
+    it("keeps counting a 6-6 spinner as 12 until it has connections on two sides", () => {
+      const board: BoardState = {
+        layoutDirection: "horizontal",
+        spinnerTileId: "tile-6-6" as TileId,
+        openEnds: [
+          { side: "left", pip: 3 as DominoPip, tileId: "tile-3-6" as TileId },
+          { side: "right", pip: 6 as DominoPip, tileId: "tile-6-6" as TileId },
+          { side: "up", pip: 6 as DominoPip, tileId: "tile-6-6" as TileId },
+          { side: "down", pip: 6 as DominoPip, tileId: "tile-6-6" as TileId },
+        ],
+        tiles: [
+          {
+            tile: tileCatalog["tile-3-6" as TileId],
+            playedBy: "p1" as any,
+            placedAtSeq: 1,
+            side: "left",
+            openPipFacingOutward: 3,
+          },
+          {
+            tile: tileCatalog["tile-6-6" as TileId],
+            playedBy: "p2" as any,
+            placedAtSeq: 2,
+            side: "right",
+            openPipFacingOutward: 6,
+          },
+        ],
+      };
+
+      expect(calculateFivesBoardScore(board)).toBe(15);
     });
   });
 

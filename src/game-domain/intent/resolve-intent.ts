@@ -18,6 +18,7 @@ export type ResolveMoveIntentInput = Readonly<{
   gameId: GameId;
   roundId: RoundId;
   playerId: PlayerId;
+  requiresOpeningDouble: boolean;
   expectedEventSeq: number;
   idempotencyKey: MoveIntentIdempotencyKey;
   board: BoardState;
@@ -76,46 +77,74 @@ const toMoveIntentAnchorId = (anchor: LayoutAnchor | null): MoveIntentAnchorId |
 const resolveOpeningMoveIntent = (
   input: ResolveMoveIntentInput,
 ): ResolveMoveIntentResult => {
-  const validationResult = validateFivesMove({
-    board: input.board,
-    handTileIds: input.handTileIds,
-    tileCatalog: input.tileCatalog,
-    intent: {
-      tileId: input.draggedTileId,
-      side: "left",
-      openPipFacingOutward: input.tileCatalog[input.draggedTileId]?.sideA ?? 0,
-    },
-    isOpeningMove: true,
-  });
+  const tile = input.tileCatalog[input.draggedTileId];
 
-  const validation = validationResult.validation;
-  if (validation.ok === false) {
+  if (!tile) {
     return createFailure(
-      validation.code,
-      validation.message,
+      "tile_not_found",
+      "Tile is not present in the tile catalog.",
       input.snapResolution,
     );
   }
 
-  return {
-    ok: true,
-    action: "submit",
-    intent: {
-      kind: "play_tile",
-      gameId: input.gameId,
-      roundId: input.roundId,
-      playerId: input.playerId,
-      variant: "fives",
-      expectedEventSeq: input.expectedEventSeq,
-      idempotencyKey: input.idempotencyKey,
-      tileId: validation.value.tileId,
-      side: validation.value.side,
-      openPipFacingOutward: validation.value.openPipFacingOutward,
-      anchorId: null,
-    },
-    legalMove: validation.value,
-    snapResolution: input.snapResolution,
-  };
+  const candidateOutwardPips =
+    tile.sideA === tile.sideB ? [tile.sideA] : [tile.sideA, tile.sideB];
+
+  let lastFailure:
+    | {
+        code: FivesMoveValidationErrorCode;
+        message: string;
+      }
+    | null = null;
+
+  for (const openPipFacingOutward of candidateOutwardPips) {
+    const validationResult = validateFivesMove({
+      board: input.board,
+      handTileIds: input.handTileIds,
+      tileCatalog: input.tileCatalog,
+      intent: {
+        tileId: input.draggedTileId,
+        side: "left",
+        openPipFacingOutward,
+      },
+      requiresOpeningDouble: input.requiresOpeningDouble,
+    });
+
+    const validation = validationResult.validation;
+
+    if (validation.ok) {
+      return {
+        ok: true,
+        action: "submit",
+        intent: {
+          kind: "play_tile",
+          gameId: input.gameId,
+          roundId: input.roundId,
+          playerId: input.playerId,
+          variant: "fives",
+          expectedEventSeq: input.expectedEventSeq,
+          idempotencyKey: input.idempotencyKey,
+          tileId: validation.value.tileId,
+          side: validation.value.side,
+          openPipFacingOutward: validation.value.openPipFacingOutward,
+          anchorId: null,
+        },
+        legalMove: validation.value,
+        snapResolution: input.snapResolution,
+      };
+    }
+
+    lastFailure = {
+      code: validation.code,
+      message: validation.message,
+    };
+  }
+
+  return createFailure(
+    lastFailure?.code ?? "illegal_orientation",
+    lastFailure?.message ?? "Dragged tile resolved to an invalid opening orientation.",
+    input.snapResolution,
+  );
 };
 
 const getCandidateOutwardPips = (
@@ -182,7 +211,7 @@ export const resolveMoveIntent = (
         side: anchor.direction,
         openPipFacingOutward,
       },
-      isOpeningMove: false,
+      requiresOpeningDouble: false,
     });
 
     if (!validationResult.validation.ok) {
@@ -219,7 +248,7 @@ export const resolveMoveIntent = (
       side: anchor.direction,
       openPipFacingOutward: tile.sideA,
     },
-    isOpeningMove: false,
+    requiresOpeningDouble: false,
   });
 
   const validation = validationResult.validation;

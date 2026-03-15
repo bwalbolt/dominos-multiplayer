@@ -3,130 +3,129 @@ import { View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 
 import { DominoTile } from "@/components/domino/domino-tile";
-import { calculateBoardGeometry } from "@/src/game-domain/layout/anchors";
 import {
+  BoardGeometry,
   CameraTransform,
   LayoutAnchor,
   PlacedTileGeometry,
 } from "@/src/game-domain/layout/types";
-import { BoardState } from "@/src/game-domain/types";
-import Animated, { useAnimatedStyle } from "react-native-reanimated";
 
 interface BoardAreaProps {
-  board: BoardState;
+  geometry: BoardGeometry;
   transform: CameraTransform;
   previewGeometry?: PlacedTileGeometry | null;
   activeSnap?: LayoutAnchor | null;
 }
 
 export const BoardArea: React.FC<BoardAreaProps> = ({
-  board,
+  geometry,
   transform,
   previewGeometry,
   activeSnap,
 }) => {
-  const geometry = useMemo(() => calculateBoardGeometry(board), [board]);
-
-  const animatedStyle = useAnimatedStyle(() => {
-    return {
+  const worldStyle = useMemo(
+    () => ({
       transform: [
+        { scale: transform.scale },
         { translateX: transform.translateX },
         { translateY: transform.translateY },
-        { scale: transform.scale },
       ],
-    };
-  });
+    }),
+    [transform],
+  );
 
   return (
     <View style={styles.container}>
-      <Animated.View style={[styles.viewport, animatedStyle]}>
-        {/* Existing tiles */}
-        {geometry.placedTiles.map((tile) => {
-          const orientation =
-            tile.rotationDeg === 0
-              ? "up"
-              : tile.rotationDeg === 90
-                ? "right"
-                : tile.rotationDeg === 180
-                  ? "down"
-                  : "left";
+      <View style={styles.viewport}>
+        <View style={[styles.world, worldStyle]}>
+          {/* Existing tiles */}
+          {geometry.placedTiles.map((tile) => {
+            const orientation =
+              tile.rotationDeg === 0
+                ? "up"
+                : tile.rotationDeg === 90
+                  ? "right"
+                  : tile.rotationDeg === 180
+                    ? "down"
+                    : "left";
 
-          return (
+            return (
+              <View
+                key={tile.tileId}
+                style={[
+                  styles.tileWrapper,
+                  {
+                    left: tile.center.x - tile.width / 2,
+                    top: tile.center.y - tile.height / 2,
+                  },
+                ]}
+              >
+                <DominoTile
+                  value1={tile.value1 as any}
+                  value2={tile.value2 as any}
+                  orientation={orientation as any}
+                />
+              </View>
+            );
+          })}
+
+          {/* Snap target highlight */}
+          {activeSnap && (
             <View
-              key={tile.tileId}
+              style={[
+                styles.snapHighlight,
+                {
+                  left: activeSnap.attachmentPoint.x - 28,
+                  top: activeSnap.attachmentPoint.y - 28,
+                },
+              ]}
+            />
+          )}
+
+          {/* Preview tile while dragging */}
+          {previewGeometry && (
+            <View
               style={[
                 styles.tileWrapper,
                 {
-                  left: tile.center.x - tile.width / 2,
-                  top: tile.center.y - tile.height / 2,
+                  left: previewGeometry.center.x - previewGeometry.width / 2,
+                  top: previewGeometry.center.y - previewGeometry.height / 2,
+                  zIndex: 100,
                 },
               ]}
             >
               <DominoTile
-                value1={tile.value1 as any}
-                value2={tile.value2 as any}
-                orientation={orientation as any}
+                value1={previewGeometry.value1 as any}
+                value2={previewGeometry.value2 as any}
+                orientation={
+                  previewGeometry.rotationDeg === 0
+                    ? "up"
+                    : previewGeometry.rotationDeg === 90
+                      ? "right"
+                      : previewGeometry.rotationDeg === 180
+                        ? "down"
+                        : "left"
+                }
+                state="idle"
               />
             </View>
-          );
-        })}
+          )}
 
-        {/* Snap target highlight */}
-        {activeSnap && (
-          <View
-            style={[
-              styles.snapHighlight,
-              {
-                left: activeSnap.attachmentPoint.x - 28,
-                top: activeSnap.attachmentPoint.y - 28,
-              },
-            ]}
-          />
-        )}
-
-        {/* Preview tile while dragging */}
-        {previewGeometry && (
-          <View
-            style={[
-              styles.tileWrapper,
-              {
-                left: previewGeometry.center.x - previewGeometry.width / 2,
-                top: previewGeometry.center.y - previewGeometry.height / 2,
-                zIndex: 100,
-              },
-            ]}
-          >
-            <DominoTile
-              value1={previewGeometry.value1 as any}
-              value2={previewGeometry.value2 as any}
-              orientation={
-                previewGeometry.rotationDeg === 0
-                  ? "up"
-                  : previewGeometry.rotationDeg === 90
-                    ? "right"
-                    : previewGeometry.rotationDeg === 180
-                      ? "down"
-                      : "left"
-              }
-              state="idle"
+          {/* Legal move anchors (debug/hint) */}
+          {geometry.anchors.map((anchor) => (
+            <View
+              key={anchor.id}
+              style={[
+                styles.anchor,
+                {
+                  left: anchor.attachmentPoint.x - 4,
+                  top: anchor.attachmentPoint.y - 4,
+                },
+              ]}
             />
-          </View>
-        )}
-
-        {/* Legal move anchors (debug/hint) */}
-        {geometry.anchors.map((anchor) => (
-          <View
-            key={anchor.id}
-            style={[
-              styles.anchor,
-              {
-                left: anchor.attachmentPoint.x - 4,
-                top: anchor.attachmentPoint.y - 4,
-              },
-            ]}
-          />
-        ))}
-      </Animated.View>
+          ))}
+        </View>
+      </View>
     </View>
   );
 };
@@ -134,11 +133,15 @@ export const BoardArea: React.FC<BoardAreaProps> = ({
 const styles = StyleSheet.create((theme) => ({
   container: {
     flex: 1,
+    overflow: "hidden",
   },
 
   viewport: {
-    width: "100%",
-    height: "100%",
+    ...StyleSheet.absoluteFillObject,
+  },
+  world: {
+    ...StyleSheet.absoluteFillObject,
+    transformOrigin: [0, 0, 0],
   },
   tileWrapper: {
     position: "absolute",

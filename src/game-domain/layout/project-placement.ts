@@ -14,7 +14,7 @@ export function projectPlacement(
   inwardTileSide: TileSide = "sideA"
 ): PlacedTileGeometry {
   const isDouble = tile.sideA === tile.sideB;
-  const direction = anchor.direction;
+  const direction = anchor.visualDirection ?? anchor.direction;
 
   let rotationDeg = 0;
   let center: Point = { x: 0, y: 0 };

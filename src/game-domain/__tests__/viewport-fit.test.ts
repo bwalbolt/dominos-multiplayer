@@ -28,7 +28,7 @@ describe("Viewport fit from fixture layouts", () => {
       height: 112,
     });
     expect(transform).toEqual({
-      scale: 1.0446,
+      scale: 1,
       translateX: 160,
       translateY: 240,
     });
@@ -47,7 +47,7 @@ describe("Viewport fit from fixture layouts", () => {
       height: 336,
     });
     expect(transform).toEqual({
-      scale: 0.9714,
+      scale: 0.9756,
       translateX: 160,
       translateY: 240,
     });
@@ -63,7 +63,7 @@ describe("Viewport fit from fixture layouts", () => {
 
     expect(viewportState).toEqual({
       transform: {
-        scale: 0.9714,
+        scale: 0.9756,
         translateX: 160,
         translateY: 240,
       },

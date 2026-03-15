@@ -1,12 +1,13 @@
 import { BoardArea } from "@/components/game/BoardArea";
 import { BoardHeader } from "@/components/game/BoardHeader";
 import { BoneyardIndicator } from "@/components/game/BoneyardIndicator";
+import { OpenEndsIndicator } from "@/components/game/OpenEndsIndicator";
 import { OpponentHand } from "@/components/game/OpponentHand";
 import { PlayerHand } from "@/components/game/PlayerHand";
 import { getComputerAction } from "@/src/game-domain/computer-player";
 import {
-  GameEvent,
   GameEndedEvent,
+  GameEvent,
   RoundEndedEvent,
   TileDrawnEvent,
   TilePlayedEvent,
@@ -22,7 +23,10 @@ import {
   ReconstructionState,
   TileId,
 } from "@/src/game-domain/types";
-import { evaluateFivesLegalMoves } from "@/src/game-domain/variants/fives";
+import {
+  calculateOpenEndsTotal,
+  evaluateFivesLegalMoves,
+} from "@/src/game-domain/variants/fives";
 import {
   checkGameWinner,
   evaluateRoundResolution,
@@ -114,6 +118,9 @@ function GameView({
   const opponentHandCount =
     currentRound.handsByPlayerId[player2Id]?.handCount || 0;
   const boneyardCount = currentRound.boneyard.remainingCount;
+  const openEndsTotal = useMemo(() => {
+    return calculateOpenEndsTotal(currentRound.board);
+  }, [currentRound.board]);
   const isPlayerTurn = game.turn?.activePlayerId === player1Id;
 
   const opponentProfile = game.players.find(
@@ -128,7 +135,8 @@ function GameView({
       board: currentRound.board,
       handTileIds: playerHandIds,
       tileCatalog,
-      isOpeningMove: currentRound.board.tiles.length === 0,
+      requiresOpeningDouble:
+        currentRound.roundNumber === 1 && currentRound.board.tiles.length === 0,
     }).moves;
   }, [currentRound, playerHandIds, tileCatalog]);
 
@@ -433,11 +441,16 @@ function GameView({
         doubleFive,
         "tile-0-0" as TileId,
         "tile-1-1" as TileId,
+        "tile-2-2" as TileId,
+        "tile-3-3" as TileId,
+        "tile-4-4" as TileId,
+        "tile-6-6" as TileId,
+        "tile-0-1" as TileId,
       ],
       forcePlayer2Hand: [
         doubleFour,
-        "tile-2-2" as TileId,
-        "tile-3-3" as TileId,
+        "tile-2-3" as TileId,
+        "tile-3-4" as TileId,
       ],
     });
     newEvents.push(nextRoundStarted);
@@ -481,15 +494,19 @@ function GameView({
       />
 
       <View style={styles.content}>
-        <OpponentHand count={opponentHandCount} isTurn={game.turn?.activePlayerId === player2Id} />
+        <OpponentHand
+          count={opponentHandCount}
+          isTurn={game.turn?.activePlayerId === player2Id}
+        />
 
         <View style={styles.boneyardWrapper}>
+          <OpenEndsIndicator total={openEndsTotal} />
           <BoneyardIndicator count={boneyardCount} />
         </View>
 
         <View ref={viewRef} style={styles.boardContainer} onLayout={onLayout}>
           <BoardArea
-            board={currentRound.board}
+            geometry={geometry}
             transform={transform}
             previewGeometry={previewGeometry}
             activeSnap={activeSnap}
@@ -689,7 +706,7 @@ const styles = StyleSheet.create((theme) => ({
   boneyardWrapper: {
     position: "absolute",
     left: 0,
-    top: 40, // Below header
+    top: 32, // Below header
     zIndex: 10,
   },
   drawButtonContainer: {

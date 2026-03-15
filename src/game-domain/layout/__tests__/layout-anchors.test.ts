@@ -1,4 +1,4 @@
-import { calculateBoardGeometry } from "../anchors";
+import { calculateBoardGeometry, solveBoardLayout } from "../anchors";
 import { BoardState, TileId, PlayerId, Tile, DominoPip } from "../../types";
 
 describe("layout-anchors", () => {
@@ -7,6 +7,8 @@ describe("layout-anchors", () => {
   const tile1: Tile = { id: "t1" as TileId, sideA: 3 as DominoPip, sideB: 3 as DominoPip }; // Spinner
   const tile2: Tile = { id: "t2" as TileId, sideA: 3 as DominoPip, sideB: 5 as DominoPip };
   const tile3: Tile = { id: "t3" as TileId, sideA: 3 as DominoPip, sideB: 4 as DominoPip };
+  const tile4: Tile = { id: "t4" as TileId, sideA: 1 as DominoPip, sideB: 4 as DominoPip };
+  const tile5: Tile = { id: "t5" as TileId, sideA: 1 as DominoPip, sideB: 0 as DominoPip };
 
   it("should place the first tile at (0,0)", () => {
     const board: BoardState = {
@@ -88,5 +90,52 @@ describe("layout-anchors", () => {
     expect(g3?.center.y).toBe(-112);
     // direction 'up', inward sideA (3) -> sideA on bottom -> orientation 'down' (180)
     expect(g3?.rotationDeg).toBe(180);
+  });
+
+  it("keeps a later-round non-spinner root aligned to its open left and right pips", () => {
+    const board: BoardState = {
+      layoutDirection: "horizontal",
+      spinnerTileId: null,
+      openEnds: [
+        { side: "left", pip: 1, tileId: tile4.id },
+        { side: "right", pip: 4, tileId: tile4.id },
+      ],
+      tiles: [
+        { tile: tile4, playedBy: player1, placedAtSeq: 1, side: "left", openPipFacingOutward: 1 },
+      ],
+    };
+
+    const solution = solveBoardLayout(board, {
+      viewport: { width: 640, height: 240 },
+      padding: 56,
+    });
+    const root = solution.geometry.placedTiles.find((tile) => tile.tileId === tile4.id);
+
+    expect(root?.rotationDeg).toBe(270);
+  });
+
+  it("keeps the mirrored line root stable after the matching side is covered", () => {
+    const board: BoardState = {
+      layoutDirection: "horizontal",
+      spinnerTileId: null,
+      openEnds: [
+        { side: "left", pip: 0, tileId: tile5.id },
+        { side: "right", pip: 4, tileId: tile4.id },
+      ],
+      tiles: [
+        { tile: tile4, playedBy: player1, placedAtSeq: 1, side: "left", openPipFacingOutward: 1 },
+        { tile: tile5, playedBy: player1, placedAtSeq: 2, side: "left", openPipFacingOutward: 0 },
+      ],
+    };
+
+    const solution = solveBoardLayout(board, {
+      viewport: { width: 640, height: 240 },
+      padding: 56,
+    });
+    const root = solution.geometry.placedTiles.find((tile) => tile.tileId === tile4.id);
+    const leftArm = solution.geometry.placedTiles.find((tile) => tile.tileId === tile5.id);
+
+    expect(root?.rotationDeg).toBe(270);
+    expect(leftArm?.center.x).toBeLessThan(root?.center.x ?? 0);
   });
 });

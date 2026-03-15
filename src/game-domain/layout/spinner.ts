@@ -1,3 +1,4 @@
+import { getSpinnerBranchUnlocks as getSharedSpinnerBranchUnlocks } from "../util/spinner";
 import { BoardState, ChainSide, TileId } from "../types";
 
 /**
@@ -9,23 +10,7 @@ export function getSpinnerBranchUnlocks(board: BoardState): {
   readonly up: boolean;
   readonly down: boolean;
 } {
-  const spinnerId = board.spinnerTileId;
-  if (!spinnerId) {
-    return { up: false, down: false };
-  }
-
-  // Find tiles played off the primary axis (left/right)
-  // Note: We check if ANY tile has been played in that direction.
-  // In our reconstruction, the first tile's side is 'right' or 'left' 
-  // depending on move intent, but usually it grows from center.
-  
-  const hasLeft = board.tiles.some(t => t.side === "left");
-  const hasRight = board.tiles.some(t => t.side === "right");
-
-  return {
-    up: hasLeft && hasRight,
-    down: hasLeft && hasRight,
-  };
+  return getSharedSpinnerBranchUnlocks(board);
 }
 
 /**

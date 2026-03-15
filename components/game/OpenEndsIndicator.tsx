@@ -1,27 +1,20 @@
-import { Image } from "expo-image";
 import React from "react";
 import { Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 
 import { spacing, typography } from "@/theme/tokens";
 
-interface BoneyardIndicatorProps {
-  count: number;
+interface OpenEndsIndicatorProps {
+  total: number;
 }
 
-export const BoneyardIndicator: React.FC<BoneyardIndicatorProps> = ({
-  count,
+export const OpenEndsIndicator: React.FC<OpenEndsIndicatorProps> = ({
+  total,
 }) => {
   return (
     <View style={styles.container}>
-      <Image
-        source={require("@/assets/images/icons/boneyard-icon.svg")}
-        style={styles.icon}
-      />
-      <View style={styles.content}>
-        <Text style={styles.count}>{count}</Text>
-        <Text style={styles.label}>tiles</Text>
-      </View>
+      <Text style={styles.total}>{total}</Text>
+      <Text style={styles.label}>board {"\n"}total</Text>
     </View>
   );
 };
@@ -39,20 +32,15 @@ const styles = StyleSheet.create((theme) => ({
     borderLeftWidth: 0,
     borderColor: theme.colors.black08,
     alignSelf: "flex-start",
+    // Add margin bottom to separate from BoneyardIndicator when stacked
+    marginBottom: spacing[4],
   },
-  icon: {
-    width: 16,
-    height: 19,
-    marginRight: spacing[4],
-  },
-  content: {
-    flexDirection: "column",
-  },
-  count: {
-    ...typography.smallText,
-    fontWeight: "700",
+  total: {
+    ...typography.scoreText,
+    fontSize: 20,
     color: theme.colors.black66,
-    lineHeight: 12,
+    lineHeight: 20,
+    marginRight: spacing[4],
   },
   label: {
     ...typography.tinyText,

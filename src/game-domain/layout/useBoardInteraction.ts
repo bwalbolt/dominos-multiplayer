@@ -7,6 +7,36 @@ import {
 import { LayoutAnchor, CameraTransform, Point, PlacedTileGeometry } from "./types";
 import { resolveSnapTarget } from "./snap";
 import { projectPlacement } from "./project-placement";
+import { domino } from "../../../theme/tokens";
+
+const selectSnappedMove = (
+  tileId: TileId,
+  snap: LayoutAnchor,
+  legalMoves: readonly FivesLegalMove[],
+  tileCatalog: Record<TileId, Tile>,
+): FivesLegalMove | null => {
+  const candidates = legalMoves.filter(
+    (move) => move.tileId === tileId && move.side === snap.direction,
+  );
+
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  if (candidates.length === 1 || snap.ownerTileId !== null) {
+    return candidates[0];
+  }
+
+  const tile = tileCatalog[tileId];
+  if (!tile) {
+    return candidates[0];
+  }
+
+  return (
+    candidates.find((move) => move.openPipFacingOutward === tile.sideA) ??
+    candidates[0]
+  );
+};
 
 export function useBoardInteraction(
   anchors: readonly LayoutAnchor[],
@@ -70,7 +100,7 @@ export function useBoardInteraction(
     setActiveSnap(resolution.anchor);
   };
 
-  const onDragEnd = () => {
+  const onDragEnd = useCallback(() => {
     if (!isInteractionEnabled) {
       setDraggedTileId(null);
       setDragPosition(null);
@@ -86,12 +116,10 @@ export function useBoardInteraction(
     setActiveSnap(null);
 
     if (snap && tileId) {
-      // Find the specific move that matches this snap
-      const move = legalMoves.find(m => m.tileId === tileId && m.side === snap.direction);
-      return move || null;
+      return selectSnappedMove(tileId, snap, legalMoves, tileCatalog);
     }
     return null;
-  };
+  }, [activeSnap, draggedTileId, isInteractionEnabled, legalMoves, tileCatalog]);
 
   const previewGeometry = DraggedTileGeometry(
     isInteractionEnabled ? draggedTileId : null,
@@ -124,7 +152,7 @@ function DraggedTileGeometry(
   if (!tile) return null;
 
   if (snap) {
-    const move = legalMoves.find(m => m.tileId === tileId && m.side === snap.direction);
+    const move = selectSnappedMove(tileId, snap, legalMoves, tileCatalog);
     if (move) {
       return projectPlacement(tile, snap, move.inwardTileSide);
     }
@@ -138,7 +166,7 @@ function DraggedTileGeometry(
     value2: tile.sideB,
     center: dragPosition,
     rotationDeg: isDouble ? 0 : 90,
-    width: isDouble ? 56 : 112,
-    height: isDouble ? 112 : 56,
+    width: isDouble ? domino.width : domino.height,
+    height: isDouble ? domino.height : domino.width,
   };
 }
