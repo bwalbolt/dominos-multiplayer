@@ -1047,6 +1047,9 @@ function buildFinalSolution(
     rotationDeg: tile.rotationDeg,
     width: tile.width,
     height: tile.height,
+    placedAtSeq: tile.placedAtSeq,
+    logicalSide: tile.logicalSide,
+    heading: tile.heading,
   }));
   const anchors = buildAnchors(extracted, state, publicPlacedTiles);
   const openSlots = anchors.map((anchor) =>

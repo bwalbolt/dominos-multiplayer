@@ -31,6 +31,7 @@ export function useBoardCamera(board: BoardState) {
   };
 
   return {
+    layout,
     transform: layout.camera,
     onLayout,
     geometry: layout.geometry,

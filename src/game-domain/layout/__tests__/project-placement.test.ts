@@ -22,7 +22,7 @@ describe("projectPlacement bend anchors", () => {
 
     const placement = projectPlacement(tile, bentAnchor, "sideA");
 
-    expect(placement).toEqual({
+    expect(placement).toMatchObject({
       tileId: tile.id,
       value1: 2,
       value2: 3,
@@ -46,7 +46,7 @@ describe("projectPlacement bend anchors", () => {
 
     const placement = projectPlacement(tile, bentAnchor, "sideA");
 
-    expect(placement).toEqual({
+    expect(placement).toMatchObject({
       tileId: tile.id,
       value1: 4,
       value2: 4,

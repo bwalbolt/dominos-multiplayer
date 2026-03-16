@@ -57,6 +57,12 @@ export type PlacedTileGeometry = {
   readonly width: number;
   /** Actual height of the tile bounding box in this rotation */
   readonly height: number;
+  /** Stable placement order from the event log. */
+  readonly placedAtSeq: number;
+  /** Logical chain branch this tile belongs to. */
+  readonly logicalSide: ChainSide;
+  /** Heading chosen by the layout solver for this tile. */
+  readonly heading: LayoutOrientation;
 };
 
 /**

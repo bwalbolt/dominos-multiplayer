@@ -21,6 +21,9 @@ describe("viewport-fit", () => {
           rotationDeg: 0,
           width: 56,
           height: 112,
+          placedAtSeq: 1,
+          logicalSide: "left",
+          heading: "up",
         },
       ];
       expect(computeBoardBounds(tiles)).toEqual({
@@ -41,6 +44,9 @@ describe("viewport-fit", () => {
           rotationDeg: 0,
           width: 56,
           height: 112,
+          placedAtSeq: 1,
+          logicalSide: "left",
+          heading: "up",
         },
         {
           tileId: "2" as any,
@@ -50,6 +56,9 @@ describe("viewport-fit", () => {
           rotationDeg: 90,
           width: 112,
           height: 56,
+          placedAtSeq: 2,
+          logicalSide: "right",
+          heading: "right",
         },
       ];
       expect(computeBoardBounds(tiles)).toEqual({
@@ -72,6 +81,9 @@ describe("viewport-fit", () => {
           rotationDeg: 0,
           width: 56,
           height: 112,
+          placedAtSeq: 1,
+          logicalSide: "left",
+          heading: "up",
         },
       ];
       const anchors: LayoutAnchor[] = [

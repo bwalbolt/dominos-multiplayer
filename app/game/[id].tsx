@@ -127,7 +127,7 @@ function GameView({
     (p: any) => p.playerId === player2Id,
   );
 
-  const { transform, onLayout, geometry, viewRef, containerOffset } =
+  const { layout, transform, onLayout, geometry, viewRef, containerOffset } =
     useBoardCamera(currentRound.board);
 
   const legalMoves = useMemo(() => {
@@ -506,8 +506,8 @@ function GameView({
 
         <View ref={viewRef} style={styles.boardContainer} onLayout={onLayout}>
           <BoardArea
-            geometry={geometry}
-            transform={transform}
+            board={currentRound.board}
+            layout={layout}
             previewGeometry={previewGeometry}
             activeSnap={activeSnap}
           />

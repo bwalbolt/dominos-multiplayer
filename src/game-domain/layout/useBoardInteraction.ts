@@ -168,5 +168,8 @@ function DraggedTileGeometry(
     rotationDeg: isDouble ? 0 : 90,
     width: isDouble ? domino.width : domino.height,
     height: isDouble ? domino.height : domino.width,
+    placedAtSeq: Number.MAX_SAFE_INTEGER,
+    logicalSide: "right",
+    heading: isDouble ? "up" : "right",
   };
 }

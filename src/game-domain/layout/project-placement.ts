@@ -95,5 +95,8 @@ export function projectPlacement(
     rotationDeg,
     width: isVertical ? domino.width : domino.height,
     height: isVertical ? domino.height : domino.width,
+    placedAtSeq: Number.MAX_SAFE_INTEGER,
+    logicalSide: anchor.direction,
+    heading: direction,
   };
 }
