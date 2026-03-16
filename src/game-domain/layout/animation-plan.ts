@@ -61,6 +61,14 @@ export function buildBoardLayoutTransitionPlan({
   nextBoard,
   nextLayout,
 }: BuildBoardLayoutTransitionPlanArgs): BoardLayoutTransitionPlan | null {
+  if (
+    previousBoard.tiles.length > 0 &&
+    previousBoard.spinnerTileId === null &&
+    nextBoard.spinnerTileId !== null
+  ) {
+    return null;
+  }
+
   const playedTiles = getAddedPlayedTiles(previousBoard, nextBoard);
 
   if (playedTiles.length !== 1) {

@@ -253,6 +253,14 @@ describe("Fives legality fixtures", () => {
 
     // Once both the left and right spinner sides are connected, up/down unlock for play.
     const geometry = calculateBoardGeometry(board);
+    const openingTileGeometry = geometry.placedTiles.find((tile) => tile.tileId === tile16);
+    const spinnerGeometry = geometry.placedTiles.find((tile) => tile.tileId === tile66);
+
+    expect(openingTileGeometry?.rotationDeg).toBe(270);
+    expect(openingTileGeometry?.center.x).toBeLessThan(spinnerGeometry?.center.x ?? 0);
+    expect(
+      (openingTileGeometry?.center.x ?? 0) + (openingTileGeometry?.width ?? 0) / 2,
+    ).toBe((spinnerGeometry?.center.x ?? 0) - (spinnerGeometry?.width ?? 0) / 2);
     expect(geometry.anchors.some((a) => a.direction === "up")).toBe(true);
     expect(geometry.anchors.some((a) => a.direction === "down")).toBe(true);
   });

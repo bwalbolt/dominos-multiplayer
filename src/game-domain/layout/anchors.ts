@@ -320,10 +320,18 @@ function extractProblem(
     : 0;
   const rootTile = sortedTiles[rootTileIndex === -1 ? 0 : rootTileIndex];
   const rootKind: RootKind = rootTile.tile.sideA === rootTile.tile.sideB ? "spinner" : "line";
-  
-  // armTiles are all tiles EXCEPT the root tile
-  const armTiles = sortedTiles.filter((_, index) => index !== (rootTileIndex === -1 ? 0 : rootTileIndex));
-  const armTilesBySide = groupTilesBySide(armTiles);
+  const normalizedRootTileIndex = rootTileIndex === -1 ? 0 : rootTileIndex;
+  const spinnerWasPlayedLater =
+    spinnerId !== null &&
+    sortedTiles.some(
+      (tile) => tile.tile.id !== spinnerId && tile.placedAtSeq < rootTile.placedAtSeq,
+    );
+  const armTilesBySide = buildArmTilesBySide(
+    sortedTiles,
+    normalizedRootTileIndex,
+    rootTile,
+    spinnerWasPlayedLater,
+  );
   const activeOpenEnds = getActiveOpenEnds(board);
   const openEndsBySide = activeOpenEnds.reduce<Partial<Record<ChainSide, DominoPip>>>(
     (accumulator, openEnd) => ({
@@ -401,6 +409,61 @@ function groupTilesBySide(
   }
 
   return grouped;
+}
+
+function buildArmTilesBySide(
+  sortedTiles: readonly PlayedTile[],
+  rootTileIndex: number,
+  rootTile: PlayedTile,
+  spinnerWasPlayedLater: boolean,
+): Readonly<Record<ChainSide, readonly PlayedTile[]>> {
+  const armTiles = sortedTiles.filter((_, index) => index !== rootTileIndex);
+
+  if (!spinnerWasPlayedLater || (rootTile.side !== "left" && rootTile.side !== "right")) {
+    return groupTilesBySide(armTiles);
+  }
+
+  const preSpinnerTiles = armTiles.filter((tile) => tile.placedAtSeq < rootTile.placedAtSeq);
+  const postSpinnerTiles = armTiles.filter((tile) => tile.placedAtSeq > rootTile.placedAtSeq);
+  const preGrouped = groupTilesBySide(preSpinnerTiles);
+  const postGrouped = groupTilesBySide(postSpinnerTiles);
+
+  if (rootTile.side === "right") {
+    return {
+      left: [
+        ...[...preGrouped.right].reverse().map(flipPlayedTileOrientation),
+        ...preGrouped.left,
+        ...postGrouped.left,
+      ],
+      right: postGrouped.right,
+      up: postGrouped.up,
+      down: postGrouped.down,
+    };
+  }
+
+  return {
+    left: postGrouped.left,
+    right: [
+      ...[...preGrouped.left].reverse().map(flipPlayedTileOrientation),
+      ...preGrouped.right,
+      ...postGrouped.right,
+    ],
+    up: postGrouped.up,
+    down: postGrouped.down,
+  };
+}
+
+function flipPlayedTileOrientation(playedTile: PlayedTile): PlayedTile {
+  if (playedTile.tile.sideA === playedTile.tile.sideB) {
+    return playedTile;
+  }
+
+  const inwardPip = getInwardPip(playedTile);
+
+  return {
+    ...playedTile,
+    openPipFacingOutward: inwardPip,
+  };
 }
 
 function buildRootCandidates(rootKind: RootKind): readonly RootCandidate[] {

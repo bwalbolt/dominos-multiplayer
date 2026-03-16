@@ -138,4 +138,71 @@ describe("layout-anchors", () => {
     expect(root?.rotationDeg).toBe(270);
     expect(leftArm?.center.x).toBeLessThan(root?.center.x ?? 0);
   });
+
+  it("keeps a later spinner on the played end instead of inserting it into the middle", () => {
+    const openingTile: Tile = {
+      id: "opening" as TileId,
+      sideA: 3 as DominoPip,
+      sideB: 5 as DominoPip,
+    };
+    const bridgeTile: Tile = {
+      id: "bridge" as TileId,
+      sideA: 2 as DominoPip,
+      sideB: 5 as DominoPip,
+    };
+    const spinnerTile: Tile = {
+      id: "spinner" as TileId,
+      sideA: 2 as DominoPip,
+      sideB: 2 as DominoPip,
+    };
+
+    const board: BoardState = {
+      layoutDirection: "horizontal",
+      spinnerTileId: spinnerTile.id,
+      openEnds: [
+        { side: "left", pip: 3, tileId: openingTile.id },
+        { side: "right", pip: 2, tileId: spinnerTile.id },
+        { side: "up", pip: 2, tileId: spinnerTile.id },
+        { side: "down", pip: 2, tileId: spinnerTile.id },
+      ],
+      tiles: [
+        {
+          tile: openingTile,
+          playedBy: player1,
+          placedAtSeq: 1,
+          side: "left",
+          openPipFacingOutward: 3,
+        },
+        {
+          tile: bridgeTile,
+          playedBy: player1,
+          placedAtSeq: 2,
+          side: "right",
+          openPipFacingOutward: 2,
+        },
+        {
+          tile: spinnerTile,
+          playedBy: player1,
+          placedAtSeq: 3,
+          side: "right",
+          openPipFacingOutward: 2,
+        },
+      ],
+    };
+
+    const solution = solveBoardLayout(board, {
+      viewport: { width: 640, height: 240 },
+      padding: 56,
+    });
+    const opening = solution.geometry.placedTiles.find((tile) => tile.tileId === openingTile.id);
+    const bridge = solution.geometry.placedTiles.find((tile) => tile.tileId === bridgeTile.id);
+    const spinner = solution.geometry.placedTiles.find((tile) => tile.tileId === spinnerTile.id);
+
+    expect(bridge?.rotationDeg).toBe(90);
+    expect(opening?.rotationDeg).toBe(270);
+    expect(spinner?.center.x).toBeGreaterThan(bridge?.center.x ?? 0);
+    expect(bridge?.center.x).toBeGreaterThan(opening?.center.x ?? 0);
+    expect((spinner?.center.x ?? 0) - (bridge?.center.x ?? 0)).toBe(84);
+    expect((bridge?.center.x ?? 0) - (opening?.center.x ?? 0)).toBe(112);
+  });
 });

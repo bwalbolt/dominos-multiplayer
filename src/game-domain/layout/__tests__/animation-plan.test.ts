@@ -388,4 +388,79 @@ describe("animation-plan", () => {
     });
     expect(newTilePlan?.bendRotation?.angleDeg).toBe(90);
   });
+
+  it("skips the transition plan when a spinner is introduced after a non-double opening", () => {
+    const openingTile = createTile("opening", 2, 3);
+    const spinnerTile = createTile("spinner", 2, 2);
+
+    const previousBoard = createBoard(
+      null,
+      [
+        { side: "left", pip: 3, tileId: openingTile.id },
+        { side: "right", pip: 2, tileId: openingTile.id },
+      ],
+      [
+        {
+          tile: openingTile,
+          playedBy: player,
+          placedAtSeq: 1,
+          side: "left",
+          openPipFacingOutward: 3,
+        },
+      ],
+    );
+    const nextBoard = createBoard(
+      spinnerTile.id,
+      [
+        { side: "left", pip: 3, tileId: openingTile.id },
+        { side: "right", pip: 2, tileId: spinnerTile.id },
+        { side: "up", pip: 2, tileId: spinnerTile.id },
+        { side: "down", pip: 2, tileId: spinnerTile.id },
+      ],
+      [
+        previousBoard.tiles[0],
+        {
+          tile: spinnerTile,
+          playedBy: player,
+          placedAtSeq: 2,
+          side: "right",
+          openPipFacingOutward: 2,
+        },
+      ],
+    );
+    const previousLayout = createSolution(
+      openingTile.id,
+      [createPlacedTile(openingTile, { x: 0, y: 0 }, 90, 1, "left", "right")],
+      [createAnchor("opening-right", openingTile.id, { x: 56, y: 0 }, "right", 2)],
+      {
+        left: [],
+        right: [],
+        up: [],
+        down: [],
+      },
+    );
+    const nextLayout = createSolution(
+      spinnerTile.id,
+      [
+        createPlacedTile(openingTile, { x: -84, y: 0 }, 90, 1, "left", "right"),
+        createPlacedTile(spinnerTile, { x: 0, y: 0 }, 0, 2, "right", "up"),
+      ],
+      [],
+      {
+        left: [1],
+        right: [],
+        up: [],
+        down: [],
+      },
+    );
+
+    expect(
+      buildBoardLayoutTransitionPlan({
+        previousBoard,
+        previousLayout,
+        nextBoard,
+        nextLayout,
+      }),
+    ).toBeNull();
+  });
 });
