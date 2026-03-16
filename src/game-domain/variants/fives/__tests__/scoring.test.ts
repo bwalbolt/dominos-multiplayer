@@ -1,12 +1,18 @@
 import type {
   BoardState,
   DominoPip,
+  EventId,
+  GameId,
   PlayerId,
+  RoundId,
   RoundState,
   Tile,
   TileId,
 } from "../../../types";
-import { evaluateRoundResolution } from "../round-resolution";
+import {
+  createTargetScoreGameEndedEvent,
+  evaluateRoundResolution,
+} from "../round-resolution";
 import { calculateFivesBoardScore } from "../scoring";
 
 describe("Fives Scoring & Resolution", () => {
@@ -265,6 +271,54 @@ describe("Fives Scoring & Resolution", () => {
       expect(result?.winnerPlayerId).toBe("p2"); // p2 made the last move
       expect(result?.reason).toBe("blocked");
       expect(result?.scoreAwarded).toBe(0);
+    });
+  });
+
+  describe("Target Score Completion", () => {
+    it("creates a GAME_ENDED event as soon as a score snapshot reaches the target", () => {
+      const result = createTargetScoreGameEndedEvent({
+        eventId: "ev-9" as EventId,
+        gameId: "game-1" as GameId,
+        eventSeq: 9,
+        occurredAt: "2026-03-16T12:00:00.000Z",
+        roundId: "round-2" as RoundId,
+        playerScores: {
+          ["p1" as PlayerId]: 100,
+          ["p2" as PlayerId]: 85,
+        },
+      });
+
+      expect(result).toEqual({
+        eventId: "ev-9",
+        gameId: "game-1",
+        eventSeq: 9,
+        type: "GAME_ENDED",
+        version: 1,
+        occurredAt: "2026-03-16T12:00:00.000Z",
+        roundId: "round-2",
+        winnerPlayerId: "p1",
+        reason: "target_score_reached",
+        finalScoreByPlayerId: {
+          p1: 100,
+          p2: 85,
+        },
+      });
+    });
+
+    it("does not create a GAME_ENDED event before the target is reached", () => {
+      const result = createTargetScoreGameEndedEvent({
+        eventId: "ev-10" as EventId,
+        gameId: "game-1" as GameId,
+        eventSeq: 10,
+        occurredAt: "2026-03-16T12:00:01.000Z",
+        roundId: "round-2" as RoundId,
+        playerScores: {
+          ["p1" as PlayerId]: 95,
+          ["p2" as PlayerId]: 90,
+        },
+      });
+
+      expect(result).toBeNull();
     });
   });
 });

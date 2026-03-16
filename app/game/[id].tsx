@@ -6,7 +6,6 @@ import { OpponentHand } from "@/components/game/OpponentHand";
 import { PlayerHand } from "@/components/game/PlayerHand";
 import { getComputerAction } from "@/src/game-domain/computer-player";
 import {
-  GameEndedEvent,
   GameEvent,
   RoundEndedEvent,
   TileDrawnEvent,
@@ -28,13 +27,13 @@ import {
   evaluateFivesLegalMoves,
 } from "@/src/game-domain/variants/fives";
 import {
-  checkGameWinner,
+  createTargetScoreGameEndedEvent,
   evaluateRoundResolution,
 } from "@/src/game-domain/variants/fives/round-resolution";
 import { colors, spacing, typography } from "@/theme/tokens";
 import { Image } from "expo-image";
 import { useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 import { StyleSheet } from "react-native-unistyles";
@@ -168,6 +167,14 @@ function GameView({
     () => new Set(legalMoves.map((m) => m.tileId)),
     [legalMoves],
   );
+  const scoreByPlayerId = useMemo(
+    () => ({
+      [player1Id]: game.playerStateById[player1Id].score,
+      [player2Id]: game.playerStateById[player2Id].score,
+    }),
+    [game.playerStateById, player1Id, player2Id],
+  );
+  const autoEndedScoreEventCountRef = useRef<number | null>(null);
 
   const handleDraw = useCallback(() => {
     if (!currentRound) return;
@@ -240,6 +247,49 @@ function GameView({
     if (!currentRound || currentRound.status !== "active") return null;
     return evaluateRoundResolution(currentRound, tileCatalog);
   }, [currentRound, tileCatalog]);
+
+  useEffect(() => {
+    if (
+      game.status !== "active" ||
+      currentRound.status !== "active" ||
+      resolution !== null
+    ) {
+      autoEndedScoreEventCountRef.current = null;
+      return;
+    }
+
+    const gameEnded = createTargetScoreGameEndedEvent({
+      eventId: Math.random().toString(36).substring(7) as EventId,
+      gameId: game.gameId,
+      eventSeq: events.length + 1,
+      occurredAt: new Date().toISOString(),
+      roundId: currentRound.roundId,
+      playerScores: scoreByPlayerId,
+      targetScore: game.metadata.targetScore,
+    });
+
+    if (gameEnded === null) {
+      autoEndedScoreEventCountRef.current = null;
+      return;
+    }
+
+    if (autoEndedScoreEventCountRef.current === events.length) {
+      return;
+    }
+
+    autoEndedScoreEventCountRef.current = events.length;
+    appendEvent(gameEnded);
+  }, [
+    appendEvent,
+    currentRound.roundId,
+    currentRound.status,
+    events.length,
+    game.gameId,
+    game.metadata.targetScore,
+    game.status,
+    resolution,
+    scoreByPlayerId,
+  ]);
 
   // Automated Computer Turn
   useEffect(() => {
@@ -354,21 +404,17 @@ function GameView({
         game.playerStateById[player2Id].score +
         (resolution.winnerPlayerId === player2Id ? resolution.scoreAwarded : 0),
     };
-    const gameWinner = checkGameWinner(nextScores, game.metadata.targetScore);
+    const gameEnded = createTargetScoreGameEndedEvent({
+      eventId: Math.random().toString(36).substring(7) as EventId,
+      gameId: game.gameId,
+      eventSeq: events.length + 2,
+      occurredAt: new Date().toISOString(),
+      roundId: currentRound.roundId,
+      playerScores: nextScores,
+      targetScore: game.metadata.targetScore,
+    });
 
-    if (gameWinner) {
-      const gameEnded: GameEndedEvent = {
-        eventId: Math.random().toString(36).substring(7) as EventId,
-        gameId: game.gameId,
-        eventSeq: events.length + 2,
-        type: "GAME_ENDED",
-        version: 1,
-        occurredAt: new Date().toISOString(),
-        roundId: currentRound.roundId,
-        winnerPlayerId: gameWinner,
-        reason: "target_score_reached",
-        finalScoreByPlayerId: nextScores,
-      };
+    if (gameEnded) {
       appendEvents([roundEnded, gameEnded]);
     } else {
       // 3. Append ROUND_STARTED for next round
