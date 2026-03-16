@@ -16,6 +16,7 @@ import {
   createStaticTileTransitionPlan,
   TileTransitionPlan,
 } from "@/src/game-domain/layout/animation-plan";
+import { computeBoardTileStackOrder } from "@/src/game-domain/layout/board-depth";
 import {
   BoardLayoutSolution,
   LayoutAnchor,
@@ -85,6 +86,19 @@ export const BoardArea: React.FC<BoardAreaProps> = ({
       layout.geometry.placedTiles.map(createStaticTileTransitionPlan),
     [isTransitionActive, layout.geometry.placedTiles, transitionPlan],
   );
+  const stackedTilePlans = useMemo(() => {
+    const stackOrder = computeBoardTileStackOrder(
+      tilePlans.map((tilePlan) => tilePlan.to),
+    );
+    const tilePlanById = new Map(
+      tilePlans.map((tilePlan) => [tilePlan.tileId, tilePlan] as const),
+    );
+
+    return stackOrder.map((stackEntry) => ({
+      plan: tilePlanById.get(stackEntry.tileId)!,
+      zIndex: stackEntry.zIndex,
+    }));
+  }, [tilePlans]);
   const cameraFrom =
     isTransitionActive ? transitionPlan?.cameraFrom ?? layout.camera : layout.camera;
   const cameraTo =
@@ -152,11 +166,12 @@ export const BoardArea: React.FC<BoardAreaProps> = ({
     <View style={styles.container}>
       <View style={styles.viewport}>
         <Animated.View style={[styles.world, worldStyle]}>
-          {tilePlans.map((tilePlan) => (
+          {stackedTilePlans.map(({ plan, zIndex }) => (
             <AnimatedBoardTile
-              key={tilePlan.tileId}
-              plan={tilePlan}
+              key={plan.tileId}
+              plan={plan}
               progress={progress}
+              zIndex={zIndex}
             />
           ))}
 
@@ -213,9 +228,11 @@ export const BoardArea: React.FC<BoardAreaProps> = ({
 function AnimatedBoardTile({
   plan,
   progress,
+  zIndex,
 }: Readonly<{
   plan: TileTransitionPlan;
   progress: SharedValue<number>;
+  zIndex: number;
 }>) {
   const baseOrientation = rotationDegToOrientation(plan.from.rotationDeg);
   const animatedStyle = useAnimatedStyle(() => {
@@ -226,6 +243,7 @@ function AnimatedBoardTile({
       left: currentCenter.x - plan.from.width / 2,
       top: currentCenter.y - plan.from.height / 2,
       opacity: interpolateNumber(progress.value, plan.opacityFrom, 1),
+      zIndex,
       transform: [
         {
           rotate: `${currentRotationDeg - plan.from.rotationDeg}deg`,
