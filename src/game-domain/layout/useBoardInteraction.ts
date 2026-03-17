@@ -1,13 +1,14 @@
-import { useState, useCallback, useEffect } from "react";
-import { 
-  FivesLegalMove, 
-  Tile, 
-  TileId, 
-} from "../types";
-import { LayoutAnchor, CameraTransform, Point, PlacedTileGeometry } from "./types";
-import { resolveSnapTarget } from "./snap";
-import { projectPlacement } from "./project-placement";
+import { useCallback, useEffect, useState } from "react";
 import { domino } from "../../../theme/tokens";
+import { FivesLegalMove, Tile, TileId } from "../types";
+import { projectPlacement } from "./project-placement";
+import { resolveSnapTarget } from "./snap";
+import {
+  CameraTransform,
+  LayoutAnchor,
+  PlacedTileGeometry,
+  Point,
+} from "./types";
 
 const selectSnappedMove = (
   tileId: TileId,
@@ -48,20 +49,24 @@ export function useBoardInteraction(
 ) {
   const [draggedTileId, setDraggedTileId] = useState<TileId | null>(null);
   const [dragPosition, setDragPosition] = useState<Point | null>(null);
-  const [dragScreenPosition, setDragScreenPosition] = useState<Point | null>(null);
+  const [dragScreenPosition, setDragScreenPosition] = useState<Point | null>(
+    null,
+  );
   const [activeSnap, setActiveSnap] = useState<LayoutAnchor | null>(null);
 
-  const screenToBoard = useCallback((screenX: number, screenY: number): Point => {
-    // Correct for viewport offset on screen
-    const localX = screenX - containerOffset.x;
-    const localY = screenY - containerOffset.y;
+  const screenToBoard = useCallback(
+    (screenX: number, screenY: number): Point => {
+      // Correct for viewport offset on screen
+      const localX = screenX - containerOffset.x;
+      const localY = screenY - containerOffset.y;
 
-    return {
-      x: (localX - cameraTransform.translateX) / cameraTransform.scale,
-      y: (localY - cameraTransform.translateY) / cameraTransform.scale,
-    };
-  }, [cameraTransform, containerOffset]);
-
+      return {
+        x: (localX - cameraTransform.translateX) / cameraTransform.scale,
+        y: (localY - cameraTransform.translateY) / cameraTransform.scale,
+      };
+    },
+    [cameraTransform, containerOffset],
+  );
 
   useEffect(() => {
     if (isInteractionEnabled) {
@@ -92,14 +97,16 @@ export function useBoardInteraction(
     setDragScreenPosition({ x: screenX, y: screenY });
 
     // Filter legal anchors for the dragged tile
-    const tileLegalMoves = legalMoves.filter(m => m.tileId === draggedTileId);
-    const tileLegalSides = new Set(tileLegalMoves.map(m => m.side));
-    
+    const tileLegalMoves = legalMoves.filter((m) => m.tileId === draggedTileId);
+    const tileLegalSides = new Set(tileLegalMoves.map((m) => m.side));
+
     // Only snaps to anchors whose direction is a legal side for this tile
-    const relevantAnchors = anchors.filter(a => tileLegalSides.has(a.direction));
-    
-    // Snap threshold: 60px in board space
-    const resolution = resolveSnapTarget(boardPoint, relevantAnchors, 60);
+    const relevantAnchors = anchors.filter((a) =>
+      tileLegalSides.has(a.direction),
+    );
+
+    // Snap threshold: 100px in board space
+    const resolution = resolveSnapTarget(boardPoint, relevantAnchors, 100);
     setActiveSnap(resolution.anchor);
   };
 
@@ -114,7 +121,7 @@ export function useBoardInteraction(
 
     const snap = activeSnap;
     const tileId = draggedTileId;
-    
+
     setDraggedTileId(null);
     setDragPosition(null);
     setDragScreenPosition(null);
@@ -124,7 +131,13 @@ export function useBoardInteraction(
       return selectSnappedMove(tileId, snap, legalMoves, tileCatalog);
     }
     return null;
-  }, [activeSnap, draggedTileId, isInteractionEnabled, legalMoves, tileCatalog]);
+  }, [
+    activeSnap,
+    draggedTileId,
+    isInteractionEnabled,
+    legalMoves,
+    tileCatalog,
+  ]);
 
   const previewGeometry = DraggedTileGeometry(
     isInteractionEnabled ? draggedTileId : null,
@@ -151,7 +164,7 @@ function DraggedTileGeometry(
   snap: LayoutAnchor | null,
   tileCatalog: Record<TileId, Tile>,
   legalMoves: readonly FivesLegalMove[],
-  dragPosition: Point | null
+  dragPosition: Point | null,
 ): PlacedTileGeometry | null {
   if (!tileId || !dragPosition) return null;
   const tile = tileCatalog[tileId];

@@ -25,13 +25,16 @@ import {
   Point,
 } from "@/src/game-domain/layout/types";
 import { BoardState } from "@/src/game-domain/types";
-import { domino, spacing } from "@/theme/tokens";
+import { spacing } from "@/theme/tokens";
 
 const BOARD_LAYOUT_TRANSITION_DURATION_MS = 320;
-const SNAP_HIGHLIGHT_SIZE = domino.width;
+const SNAP_HIGHLIGHT_SIZE = spacing[16];
 const SNAP_HIGHLIGHT_RADIUS = SNAP_HIGHLIGHT_SIZE / 2;
 const ANCHOR_SIZE = spacing[8];
 const ANCHOR_RADIUS = ANCHOR_SIZE / 2;
+const SNAP_HIGHLIGHT_Z_INDEX = 150;
+const ANCHOR_Z_INDEX = 160;
+const PREVIEW_TILE_Z_INDEX = 200;
 
 type BoardSnapshot = Readonly<{
   board: BoardState;
@@ -55,7 +58,9 @@ export const BoardArea: React.FC<BoardAreaProps> = ({
 }) => {
   const progress = useSharedValue(1);
   const previousSnapshotRef = useRef<BoardSnapshot | null>(null);
-  const transitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const transitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const [activeTransition, setActiveTransition] = useState<Readonly<{
     key: string;
     plan: BoardLayoutTransitionPlan;
@@ -80,18 +85,21 @@ export const BoardArea: React.FC<BoardAreaProps> = ({
       zIndex: stackEntry.zIndex,
     }));
   }, [tilePlans]);
-  const cameraFrom =
-    activeTransition?.plan.cameraFrom ?? layout.camera;
-  const cameraTo =
-    activeTransition?.plan.cameraTo ?? layout.camera;
+  const cameraFrom = activeTransition?.plan.cameraFrom ?? layout.camera;
+  const cameraTo = activeTransition?.plan.cameraTo ?? layout.camera;
   const visibleAnchors = useMemo(
-    () => layout.geometry.anchors.filter((anchor) => anchor.ownerTileId !== null),
+    () =>
+      layout.geometry.anchors.filter((anchor) => anchor.ownerTileId !== null),
     [layout.geometry.anchors],
   );
   const worldStyle = useAnimatedStyle(() => ({
     transform: [
       {
-        scale: interpolateNumber(progress.value, cameraFrom.scale, cameraTo.scale),
+        scale: interpolateNumber(
+          progress.value,
+          cameraFrom.scale,
+          cameraTo.scale,
+        ),
       },
       {
         translateX: interpolateNumber(
@@ -371,11 +379,7 @@ function getAnimatedTileRotation(
   return rotationDeg;
 }
 
-function interpolateNumber(
-  progress: number,
-  from: number,
-  to: number,
-): number {
+function interpolateNumber(progress: number, from: number, to: number): number {
   "worklet";
 
   return from + (to - from) * progress;
@@ -403,7 +407,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   previewTileWrapper: {
     position: "absolute",
-    zIndex: 200,
+    zIndex: PREVIEW_TILE_Z_INDEX,
   },
   anchor: {
     position: "absolute",
@@ -412,6 +416,7 @@ const styles = StyleSheet.create((theme) => ({
     borderRadius: ANCHOR_RADIUS,
     backgroundColor: theme.colors.blue,
     opacity: 0.3,
+    zIndex: ANCHOR_Z_INDEX,
   },
   snapHighlight: {
     position: "absolute",
@@ -420,5 +425,6 @@ const styles = StyleSheet.create((theme) => ({
     borderRadius: SNAP_HIGHLIGHT_RADIUS,
     backgroundColor: theme.colors.blue,
     opacity: 0.2,
+    zIndex: SNAP_HIGHLIGHT_Z_INDEX,
   },
 }));
