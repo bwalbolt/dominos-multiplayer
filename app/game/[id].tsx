@@ -124,6 +124,7 @@ function GameView({
   const opponentState = game.playerStateById[player2Id];
   const currentRound = game.currentRound!;
   const isScreenFocused = useIsFocused();
+  const [isBoardTransitionActive, setIsBoardTransitionActive] = useState(false);
 
   const { playerHandIds, playerHand } = useMemo(() => {
     const ids = currentRound.handsByPlayerId[player1Id]?.tileIds || [];
@@ -141,7 +142,8 @@ function GameView({
     return calculateOpenEndsTotal(currentRound.board);
   }, [currentRound.board]);
   const isPlayerTurn = game.turn?.activePlayerId === player1Id;
-  const isBoardInteractionEnabled = isPlayerTurn && isScreenFocused;
+  const isBoardInteractionEnabled =
+    isPlayerTurn && isScreenFocused && !isBoardTransitionActive;
 
   const opponentProfile = game.players.find(
     (p: any) => p.playerId === player2Id,
@@ -756,11 +758,13 @@ function GameView({
           <BoneyardIndicator count={boneyardCount} />
         </View>
 
-        <View ref={viewRef} style={styles.boardContainer} onLayout={onLayout}>
+      <View ref={viewRef} style={styles.boardContainer} onLayout={onLayout}>
           <BoardArea
             board={currentRound.board}
             layout={layout}
             activeSnap={activeSnap}
+            previewTile={activeSnap ? previewGeometry : null}
+            onTransitionActiveChange={setIsBoardTransitionActive}
           />
         </View>
 
@@ -847,6 +851,7 @@ function GameView({
           activeDrag={activeHandDrag}
           activeDragVisual={currentDragVisual}
           returningDrags={returningHandDrags}
+          hideActiveDrag={activeSnap !== null}
           usesVerticalDragActivation={usesVerticalDragActivation}
           hasActiveDrag={activeHandDrag !== null}
           onReturnComplete={handleReturnAnimationComplete}

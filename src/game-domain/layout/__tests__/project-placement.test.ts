@@ -56,4 +56,48 @@ describe("projectPlacement bend anchors", () => {
       height: 56,
     });
   });
+
+  it("centers the opening double on the board instead of offsetting from the initial anchor", () => {
+    const tile = createTile("opening-double", 6, 6);
+    const openingAnchor: LayoutAnchor = {
+      id: "initial",
+      ownerTileId: null,
+      attachmentPoint: { x: 0, y: 0 },
+      direction: "left",
+      openPip: 6,
+    };
+
+    const placement = projectPlacement(tile, openingAnchor, "sideA");
+
+    expect(placement).toMatchObject({
+      tileId: tile.id,
+      center: { x: 0, y: 0 },
+      rotationDeg: 0,
+      width: 56,
+      height: 112,
+      heading: "up",
+    });
+  });
+
+  it("centers the opening line tile using the resolved opening orientation", () => {
+    const tile = createTile("opening-line", 1, 4);
+    const openingAnchor: LayoutAnchor = {
+      id: "initial",
+      ownerTileId: null,
+      attachmentPoint: { x: 0, y: 0 },
+      direction: "left",
+      openPip: 1,
+    };
+
+    const placement = projectPlacement(tile, openingAnchor, "sideB");
+
+    expect(placement).toMatchObject({
+      tileId: tile.id,
+      center: { x: 0, y: 0 },
+      rotationDeg: 0,
+      width: 56,
+      height: 112,
+      heading: "up",
+    });
+  });
 });

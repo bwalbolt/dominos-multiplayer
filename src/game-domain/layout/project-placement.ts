@@ -13,6 +13,10 @@ export function projectPlacement(
   anchor: LayoutAnchor,
   inwardTileSide: TileSide = "sideA"
 ): PlacedTileGeometry {
+  if (anchor.ownerTileId === null && anchor.id === "initial") {
+    return projectOpeningPlacement(tile, anchor, inwardTileSide);
+  }
+
   const isDouble = tile.sideA === tile.sideB;
   const direction = anchor.visualDirection ?? anchor.direction;
 
@@ -99,4 +103,46 @@ export function projectPlacement(
     logicalSide: anchor.direction,
     heading: direction,
   };
+}
+
+function projectOpeningPlacement(
+  tile: Tile,
+  anchor: LayoutAnchor,
+  inwardTileSide: TileSide,
+): PlacedTileGeometry {
+  if (tile.sideA === tile.sideB) {
+    return {
+      tileId: tile.id,
+      value1: tile.sideA,
+      value2: tile.sideB,
+      center: anchor.attachmentPoint,
+      rotationDeg: 0,
+      width: domino.width,
+      height: domino.height,
+      placedAtSeq: Number.MAX_SAFE_INTEGER,
+      logicalSide: anchor.direction,
+      heading: "up",
+    };
+  }
+
+  const rotationDeg = resolveOpeningLineRotation(inwardTileSide);
+
+  return {
+    tileId: tile.id,
+    value1: tile.sideA,
+    value2: tile.sideB,
+    center: anchor.attachmentPoint,
+    rotationDeg,
+    width: domino.width,
+    height: domino.height,
+    placedAtSeq: Number.MAX_SAFE_INTEGER,
+    logicalSide: anchor.direction,
+    heading: rotationDeg === 0 ? "up" : "down",
+  };
+}
+
+function resolveOpeningLineRotation(
+  inwardTileSide: TileSide,
+): 0 | 180 {
+  return inwardTileSide === "sideA" ? 180 : 0;
 }

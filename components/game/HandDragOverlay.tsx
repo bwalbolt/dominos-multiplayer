@@ -24,6 +24,7 @@ interface HandDragOverlayProps {
   activeDrag: ActiveHandDrag | null;
   activeDragVisual: DragTileVisual | null;
   returningDrags: readonly ReturningHandDrag[];
+  hideActiveDrag: boolean;
   usesVerticalDragActivation: boolean;
   hasActiveDrag: boolean;
   onReturnComplete: (returnId: string, tileId: TileId) => void;
@@ -40,6 +41,7 @@ export function HandDragOverlay({
   activeDrag,
   activeDragVisual,
   returningDrags,
+  hideActiveDrag,
   usesVerticalDragActivation,
   hasActiveDrag,
   onReturnComplete,
@@ -49,7 +51,7 @@ export function HandDragOverlay({
 }: HandDragOverlayProps) {
   return (
     <>
-      {activeDrag && activeDragVisual && (
+      {activeDrag && activeDragVisual && !hideActiveDrag && (
         <Animated.View
           pointerEvents="none"
           style={[

@@ -12,6 +12,7 @@ import { StyleSheet } from "react-native-unistyles";
 import { DominoTile } from "@/components/domino/domino-tile";
 import { DominoOrientation } from "@/components/domino/domino-tile.types";
 import {
+  BoardLayoutTransitionPlan,
   buildBoardLayoutTransitionPlan,
   createStaticTileTransitionPlan,
   TileTransitionPlan,
@@ -20,6 +21,7 @@ import { computeBoardTileStackOrder } from "@/src/game-domain/layout/board-depth
 import {
   BoardLayoutSolution,
   LayoutAnchor,
+  PlacedTileGeometry,
   Point,
 } from "@/src/game-domain/layout/types";
 import { BoardState } from "@/src/game-domain/types";
@@ -40,48 +42,30 @@ interface BoardAreaProps {
   board: BoardState;
   layout: BoardLayoutSolution;
   activeSnap?: LayoutAnchor | null;
+  previewTile?: PlacedTileGeometry | null;
+  onTransitionActiveChange?: (isActive: boolean) => void;
 }
 
 export const BoardArea: React.FC<BoardAreaProps> = ({
   board,
   layout,
   activeSnap,
+  previewTile,
+  onTransitionActiveChange,
 }) => {
   const progress = useSharedValue(1);
   const previousSnapshotRef = useRef<BoardSnapshot | null>(null);
   const transitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [completedTransitionKey, setCompletedTransitionKey] = useState<string | null>(
-    null,
-  );
-  const previousSnapshot = previousSnapshotRef.current;
-  const transitionPlan = useMemo(() => {
-    if (!previousSnapshot) {
-      return null;
-    }
-
-    return buildBoardLayoutTransitionPlan({
-      previousBoard: previousSnapshot.board,
-      previousLayout: previousSnapshot.layout,
-      nextBoard: board,
-      nextLayout: layout,
-    });
-  }, [board, layout, previousSnapshot]);
-  const transitionKey = useMemo(() => {
-    if (!transitionPlan) {
-      return null;
-    }
-
-    return board.tiles.map((tile) => tile.tile.id).join("|");
-  }, [board.tiles, transitionPlan]);
-  const isTransitionActive =
-    transitionPlan !== null &&
-    transitionKey !== null &&
-    completedTransitionKey !== transitionKey;
+  const [activeTransition, setActiveTransition] = useState<Readonly<{
+    key: string;
+    plan: BoardLayoutTransitionPlan;
+  }> | null>(null);
+  const isTransitionActive = activeTransition !== null;
   const tilePlans = useMemo(
     () =>
-      (isTransitionActive ? transitionPlan?.tilePlans : null) ??
+      activeTransition?.plan.tilePlans ??
       layout.geometry.placedTiles.map(createStaticTileTransitionPlan),
-    [isTransitionActive, layout.geometry.placedTiles, transitionPlan],
+    [activeTransition, layout.geometry.placedTiles],
   );
   const stackedTilePlans = useMemo(() => {
     const stackOrder = computeBoardTileStackOrder(
@@ -97,9 +81,13 @@ export const BoardArea: React.FC<BoardAreaProps> = ({
     }));
   }, [tilePlans]);
   const cameraFrom =
-    isTransitionActive ? transitionPlan?.cameraFrom ?? layout.camera : layout.camera;
+    activeTransition?.plan.cameraFrom ?? layout.camera;
   const cameraTo =
-    isTransitionActive ? transitionPlan?.cameraTo ?? layout.camera : layout.camera;
+    activeTransition?.plan.cameraTo ?? layout.camera;
+  const visibleAnchors = useMemo(
+    () => layout.geometry.anchors.filter((anchor) => anchor.ownerTileId !== null),
+    [layout.geometry.anchors],
+  );
   const worldStyle = useAnimatedStyle(() => ({
     transform: [
       {
@@ -123,6 +111,24 @@ export const BoardArea: React.FC<BoardAreaProps> = ({
   }));
 
   useEffect(() => {
+    const previousSnapshot = previousSnapshotRef.current;
+
+    if (previousSnapshot) {
+      const nextPlan = buildBoardLayoutTransitionPlan({
+        previousBoard: previousSnapshot.board,
+        previousLayout: previousSnapshot.layout,
+        nextBoard: board,
+        nextLayout: layout,
+      });
+
+      if (nextPlan) {
+        setActiveTransition({
+          key: board.tiles.map((tile) => tile.tile.id).join("|"),
+          plan: nextPlan,
+        });
+      }
+    }
+
     previousSnapshotRef.current = { board, layout };
   }, [board, layout]);
 
@@ -132,7 +138,7 @@ export const BoardArea: React.FC<BoardAreaProps> = ({
       transitionTimeoutRef.current = null;
     }
 
-    if (!transitionPlan) {
+    if (!activeTransition) {
       progress.value = 1;
       return;
     }
@@ -143,11 +149,10 @@ export const BoardArea: React.FC<BoardAreaProps> = ({
       easing: Easing.inOut(Easing.cubic),
     });
 
-    const finishingTransitionKey = transitionKey;
     transitionTimeoutRef.current = setTimeout(() => {
-      if (finishingTransitionKey !== null) {
-        setCompletedTransitionKey(finishingTransitionKey);
-      }
+      setActiveTransition((current) =>
+        current?.key === activeTransition.key ? null : current,
+      );
       transitionTimeoutRef.current = null;
     }, BOARD_LAYOUT_TRANSITION_DURATION_MS);
 
@@ -157,7 +162,15 @@ export const BoardArea: React.FC<BoardAreaProps> = ({
         transitionTimeoutRef.current = null;
       }
     };
-  }, [progress, transitionKey, transitionPlan]);
+  }, [activeTransition, progress]);
+
+  useEffect(() => {
+    onTransitionActiveChange?.(isTransitionActive);
+
+    return () => {
+      onTransitionActiveChange?.(false);
+    };
+  }, [isTransitionActive, onTransitionActiveChange]);
 
   return (
     <View style={styles.container}>
@@ -172,7 +185,26 @@ export const BoardArea: React.FC<BoardAreaProps> = ({
             />
           ))}
 
-          {activeSnap && (
+          {previewTile && (
+            <View
+              pointerEvents="none"
+              style={[
+                styles.previewTileWrapper,
+                {
+                  left: previewTile.center.x - previewTile.width / 2,
+                  top: previewTile.center.y - previewTile.height / 2,
+                },
+              ]}
+            >
+              <DominoTile
+                value1={previewTile.value1}
+                value2={previewTile.value2}
+                orientation={rotationDegToOrientation(previewTile.rotationDeg)}
+              />
+            </View>
+          )}
+
+          {activeSnap && activeSnap.ownerTileId !== null && (
             <View
               style={[
                 styles.snapHighlight,
@@ -183,7 +215,7 @@ export const BoardArea: React.FC<BoardAreaProps> = ({
               ]}
             />
           )}
-          {layout.geometry.anchors.map((anchor) => (
+          {visibleAnchors.map((anchor) => (
             <View
               key={anchor.id}
               style={[
@@ -368,6 +400,10 @@ const styles = StyleSheet.create((theme) => ({
   },
   tileWrapper: {
     position: "absolute",
+  },
+  previewTileWrapper: {
+    position: "absolute",
+    zIndex: 200,
   },
   anchor: {
     position: "absolute",
