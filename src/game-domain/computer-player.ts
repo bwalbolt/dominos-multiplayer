@@ -18,6 +18,13 @@ export type ComputerAction =
 
 const getTilePipTotal = (tile: Tile): number => tile.sideA + tile.sideB;
 
+const getNextPlacedAtSeq = (board: BoardState): number =>
+  board.tiles.reduce(
+    (maxPlacedAtSeq, playedTile) =>
+      Math.max(maxPlacedAtSeq, playedTile.placedAtSeq),
+    0,
+  ) + 1;
+
 /**
  * PROJECTS a move on the board to calculate what the board will look like.
  */
@@ -30,7 +37,9 @@ const projectMoveOnBoard = (
   const playedTile = {
     tile,
     playedBy: playerId,
-    placedAtSeq: 0, // Placeholder
+    // Preserve later-spinner behavior during scoring by projecting the move
+    // with the same relative sequence ordering reconstruct() would assign.
+    placedAtSeq: getNextPlacedAtSeq(board),
     side: move.side,
     openPipFacingOutward: move.openPipFacingOutward,
   };

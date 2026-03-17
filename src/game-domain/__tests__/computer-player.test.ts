@@ -1,3 +1,4 @@
+import { getComputerAction } from "../computer-player";
 import type {
   BoardState,
   PlayerId,
@@ -5,9 +6,8 @@ import type {
   Tile,
   TileId,
 } from "../types";
-import { getComputerAction } from "../computer-player";
 
-describe("Computer Player (T1)", () => {
+describe("Computer Player", () => {
   const p1 = "p1" as PlayerId;
   const computer = "computer" as PlayerId;
 
