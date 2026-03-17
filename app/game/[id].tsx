@@ -202,6 +202,9 @@ function GameView({
   const [returningHandDrags, setReturningHandDrags] = useState<
     ReturningHandDrag[]
   >([]);
+  const activeHandDragRef = useRef<ActiveHandDrag | null>(null);
+  const returningHandDragsRef = useRef<ReturningHandDrag[]>([]);
+  const currentDragVisualRef = useRef<DragTileVisual | null>(null);
   const nextReturnIdRef = useRef(0);
   const currentDragVisual = useMemo(() => {
     if (!activeHandDrag) {
@@ -231,11 +234,18 @@ function GameView({
   );
   const usesVerticalDragActivation = playerHand.length >= 8;
 
+  activeHandDragRef.current = activeHandDrag;
+  returningHandDragsRef.current = [...returningHandDrags];
+  currentDragVisualRef.current = currentDragVisual;
+
   useEffect(() => {
     if (isScreenFocused) {
       return;
     }
 
+    activeHandDragRef.current = null;
+    returningHandDragsRef.current = [];
+    currentDragVisualRef.current = null;
     setActiveHandDrag(null);
     setReturningHandDrags([]);
   }, [isScreenFocused]);
@@ -284,44 +294,58 @@ function GameView({
     (dragStart: HandTileDragStart) => {
       const tile = tileCatalog[dragStart.tileId];
 
-      if (!tile || activeHandDrag) {
+      if (!tile || activeHandDragRef.current) {
         return;
       }
 
-      setActiveHandDrag(createActiveHandDrag({
+      const nextActiveDrag = createActiveHandDrag({
         tileId: dragStart.tileId,
         value1: tile.sideA,
         value2: tile.sideB,
         sourceRect: dragStart.sourceRect,
         initialVisual: createSourceDragTileVisual(dragStart.sourceRect),
-      }));
+      });
+
+      activeHandDragRef.current = nextActiveDrag;
+      currentDragVisualRef.current = nextActiveDrag.initialVisual;
+      setActiveHandDrag(nextActiveDrag);
       onDragStart(dragStart.tileId);
     },
-    [activeHandDrag, onDragStart, tileCatalog],
+    [onDragStart, tileCatalog],
   );
 
   const finalizeActiveDrag = useCallback(() => {
+    const drag = activeHandDragRef.current;
+    const dragVisual = currentDragVisualRef.current;
     const move = onDragEnd();
-    if (!activeHandDrag) {
+    if (!drag) {
       return;
     }
 
     if (!isPlayerTurn || !move || !currentRound) {
-      setReturningHandDrags((current) => [
-        ...current,
-        createReturningHandDrag({
-          returnId: createNextReturnId(),
-          activeDrag: activeHandDrag,
-          returnFrom:
-            currentDragVisual ??
-            activeHandDrag.initialVisual ??
-            createSourceDragTileVisual(activeHandDrag.sourceRect),
-        }),
-      ]);
+      setReturningHandDrags((current) => {
+        const next = [
+          ...current,
+          createReturningHandDrag({
+            returnId: createNextReturnId(),
+            activeDrag: drag,
+            returnFrom:
+              dragVisual ??
+              drag.initialVisual ??
+              createSourceDragTileVisual(drag.sourceRect),
+          }),
+        ];
+        returningHandDragsRef.current = next;
+        return next;
+      });
+      activeHandDragRef.current = null;
+      currentDragVisualRef.current = null;
       setActiveHandDrag(null);
       return;
     }
 
+    activeHandDragRef.current = null;
+    currentDragVisualRef.current = null;
     setActiveHandDrag(null);
 
     const event: TilePlayedEvent = {
@@ -339,10 +363,8 @@ function GameView({
     };
     appendEvent(event);
   }, [
-    activeHandDrag,
     onDragEnd,
     currentRound,
-    currentDragVisual,
     game.gameId,
     events.length,
     isPlayerTurn,
@@ -356,9 +378,13 @@ function GameView({
   }, [finalizeActiveDrag]);
 
   const handleReturnAnimationComplete = useCallback((returnId: string) => {
-    setReturningHandDrags((current) =>
-      current.filter((returningDrag) => returningDrag.returnId !== returnId),
-    );
+    setReturningHandDrags((current) => {
+      const next = current.filter(
+        (returningDrag) => returningDrag.returnId !== returnId,
+      );
+      returningHandDragsRef.current = next;
+      return next;
+    });
   }, []);
 
   const handleReturningDragStart = useCallback(
@@ -367,31 +393,37 @@ function GameView({
       currentVisual: DragTileVisual,
       touchPoint: ScreenPoint,
     ) => {
-      if (activeHandDrag) {
+      if (activeHandDragRef.current) {
         return;
       }
 
-      const returningDrag = returningHandDrags.find(
+      const returningDrag = returningHandDragsRef.current.find(
         (candidate) => candidate.returnId === returnId,
       );
       if (!returningDrag) {
         return;
       }
 
-      setReturningHandDrags((current) =>
-        current.map((candidate) =>
+      setReturningHandDrags((current) => {
+        const next = current.map((candidate) =>
           candidate.returnId === returnId
             ? { ...candidate, isPromotedToActive: true }
             : candidate,
-        ),
+        );
+        returningHandDragsRef.current = next;
+        return next;
+      });
+      const promotedDrag = createPromotedActiveHandDrag(
+        returningDrag,
+        currentVisual,
       );
-      setActiveHandDrag(
-        createPromotedActiveHandDrag(returningDrag, currentVisual),
-      );
+      activeHandDragRef.current = promotedDrag;
+      currentDragVisualRef.current = currentVisual;
+      setActiveHandDrag(promotedDrag);
       onDragStart(returningDrag.tileId);
       onDragUpdate(touchPoint.x, touchPoint.y);
     },
-    [activeHandDrag, onDragStart, onDragUpdate, returningHandDrags],
+    [onDragStart, onDragUpdate],
   );
 
   const handleReturningDragUpdate = useCallback(
@@ -403,9 +435,13 @@ function GameView({
 
   const handleReturningDragEnd = useCallback(
     (returnId: string) => {
-      setReturningHandDrags((current) =>
-        current.filter((returningDrag) => returningDrag.returnId !== returnId),
-      );
+      setReturningHandDrags((current) => {
+        const next = current.filter(
+          (returningDrag) => returningDrag.returnId !== returnId,
+        );
+        returningHandDragsRef.current = next;
+        return next;
+      });
       finalizeActiveDrag();
     },
     [finalizeActiveDrag],
