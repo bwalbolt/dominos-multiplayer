@@ -20,7 +20,6 @@ import { computeBoardTileStackOrder } from "@/src/game-domain/layout/board-depth
 import {
   BoardLayoutSolution,
   LayoutAnchor,
-  PlacedTileGeometry,
   Point,
 } from "@/src/game-domain/layout/types";
 import { BoardState } from "@/src/game-domain/types";
@@ -40,14 +39,12 @@ type BoardSnapshot = Readonly<{
 interface BoardAreaProps {
   board: BoardState;
   layout: BoardLayoutSolution;
-  previewGeometry?: PlacedTileGeometry | null;
   activeSnap?: LayoutAnchor | null;
 }
 
 export const BoardArea: React.FC<BoardAreaProps> = ({
   board,
   layout,
-  previewGeometry,
   activeSnap,
 }) => {
   const progress = useSharedValue(1);
@@ -186,27 +183,6 @@ export const BoardArea: React.FC<BoardAreaProps> = ({
               ]}
             />
           )}
-
-          {previewGeometry && (
-            <View
-              style={[
-                styles.tileWrapper,
-                {
-                  left: previewGeometry.center.x - previewGeometry.width / 2,
-                  top: previewGeometry.center.y - previewGeometry.height / 2,
-                  zIndex: 100,
-                },
-              ]}
-            >
-              <DominoTile
-                value1={previewGeometry.value1}
-                value2={previewGeometry.value2}
-                orientation={rotationDegToOrientation(previewGeometry.rotationDeg)}
-                state="idle"
-              />
-            </View>
-          )}
-
           {layout.geometry.anchors.map((anchor) => (
             <View
               key={anchor.id}

@@ -48,6 +48,7 @@ export function useBoardInteraction(
 ) {
   const [draggedTileId, setDraggedTileId] = useState<TileId | null>(null);
   const [dragPosition, setDragPosition] = useState<Point | null>(null);
+  const [dragScreenPosition, setDragScreenPosition] = useState<Point | null>(null);
   const [activeSnap, setActiveSnap] = useState<LayoutAnchor | null>(null);
 
   const screenToBoard = useCallback((screenX: number, screenY: number): Point => {
@@ -69,6 +70,7 @@ export function useBoardInteraction(
 
     setDraggedTileId(null);
     setDragPosition(null);
+    setDragScreenPosition(null);
     setActiveSnap(null);
   }, [isInteractionEnabled]);
 
@@ -87,6 +89,7 @@ export function useBoardInteraction(
 
     const boardPoint = screenToBoard(screenX, screenY);
     setDragPosition(boardPoint);
+    setDragScreenPosition({ x: screenX, y: screenY });
 
     // Filter legal anchors for the dragged tile
     const tileLegalMoves = legalMoves.filter(m => m.tileId === draggedTileId);
@@ -104,6 +107,7 @@ export function useBoardInteraction(
     if (!isInteractionEnabled) {
       setDraggedTileId(null);
       setDragPosition(null);
+      setDragScreenPosition(null);
       setActiveSnap(null);
       return null;
     }
@@ -113,6 +117,7 @@ export function useBoardInteraction(
     
     setDraggedTileId(null);
     setDragPosition(null);
+    setDragScreenPosition(null);
     setActiveSnap(null);
 
     if (snap && tileId) {
@@ -133,6 +138,7 @@ export function useBoardInteraction(
     draggedTileId,
     activeSnap,
     dragPosition,
+    dragScreenPosition,
     previewGeometry,
     onDragStart,
     onDragUpdate,

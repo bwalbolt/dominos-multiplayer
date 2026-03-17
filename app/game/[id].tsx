@@ -1,9 +1,18 @@
 import { BoardArea } from "@/components/game/BoardArea";
 import { BoardHeader } from "@/components/game/BoardHeader";
 import { BoneyardIndicator } from "@/components/game/BoneyardIndicator";
+import { HandDragOverlay } from "@/components/game/HandDragOverlay";
 import { OpenEndsIndicator } from "@/components/game/OpenEndsIndicator";
 import { OpponentHand } from "@/components/game/OpponentHand";
 import { PlayerHand } from "@/components/game/PlayerHand";
+import {
+  createSourceDragTileVisual,
+  resolveDraggedTileVisual,
+} from "@/components/game/hand-drag-visual";
+import {
+  ActiveHandDrag,
+  HandTileDragStart,
+} from "@/components/game/hand-drag.types";
 import { getComputerAction } from "@/src/game-domain/computer-player";
 import {
   GameEvent,
@@ -31,6 +40,7 @@ import {
   evaluateRoundResolution,
 } from "@/src/game-domain/variants/fives/round-resolution";
 import { colors, spacing, typography } from "@/theme/tokens";
+import { useIsFocused } from "@react-navigation/native";
 import { Image } from "expo-image";
 import { useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -104,6 +114,7 @@ function GameView({
   const playerState = game.playerStateById[player1Id];
   const opponentState = game.playerStateById[player2Id];
   const currentRound = game.currentRound!;
+  const isScreenFocused = useIsFocused();
 
   const { playerHandIds, playerHand } = useMemo(() => {
     const ids = currentRound.handsByPlayerId[player1Id]?.tileIds || [];
@@ -121,6 +132,7 @@ function GameView({
     return calculateOpenEndsTotal(currentRound.board);
   }, [currentRound.board]);
   const isPlayerTurn = game.turn?.activePlayerId === player1Id;
+  const isBoardInteractionEnabled = isPlayerTurn && isScreenFocused;
 
   const opponentProfile = game.players.find(
     (p: any) => p.playerId === player2Id,
@@ -140,8 +152,8 @@ function GameView({
   }, [currentRound, playerHandIds, tileCatalog]);
 
   const {
-    draggedTileId,
     activeSnap,
+    dragScreenPosition,
     previewGeometry,
     onDragStart,
     onDragUpdate,
@@ -152,7 +164,7 @@ function GameView({
     tileCatalog,
     transform,
     containerOffset,
-    isPlayerTurn,
+    isBoardInteractionEnabled,
   );
 
   const {
@@ -175,6 +187,38 @@ function GameView({
     [game.playerStateById, player1Id, player2Id],
   );
   const autoEndedScoreEventCountRef = useRef<number | null>(null);
+  const [activeHandDrag, setActiveHandDrag] = useState<ActiveHandDrag | null>(
+    null,
+  );
+  const currentDragVisual = useMemo(() => {
+    if (!activeHandDrag) {
+      return null;
+    }
+
+    return resolveDraggedTileVisual({
+      sourceRect: activeHandDrag.sourceRect,
+      dragScreenPosition,
+      previewGeometry,
+      cameraTransform: transform,
+      containerOffset,
+      isSnapped: activeSnap !== null,
+    });
+  }, [
+    activeHandDrag,
+    activeSnap,
+    containerOffset,
+    dragScreenPosition,
+    previewGeometry,
+    transform,
+  ]);
+
+  useEffect(() => {
+    if (isScreenFocused) {
+      return;
+    }
+
+    setActiveHandDrag(null);
+  }, [isScreenFocused]);
 
   const handleDraw = useCallback(() => {
     if (!currentRound) return;
@@ -211,11 +255,50 @@ function GameView({
     }
   }, [currentRound, game.gameId, events.length, player1Id, appendEvent]);
 
+  const handleHandDragStart = useCallback(
+    (dragStart: HandTileDragStart) => {
+      const tile = tileCatalog[dragStart.tileId];
+
+      if (!tile) {
+        return;
+      }
+
+      setActiveHandDrag({
+        tileId: dragStart.tileId,
+        value1: tile.sideA,
+        value2: tile.sideB,
+        sourceRect: dragStart.sourceRect,
+        phase: "dragging",
+        returnFrom: null,
+      });
+      onDragStart(dragStart.tileId);
+    },
+    [onDragStart, tileCatalog],
+  );
+
   const handleDragEnd = useCallback(() => {
     const move = onDragEnd();
-    if (!isPlayerTurn || !move || !currentRound) {
+    if (!activeHandDrag) {
       return;
     }
+
+    if (!isPlayerTurn || !move || !currentRound) {
+      setActiveHandDrag((current) => {
+        if (!current || current.tileId !== activeHandDrag.tileId) {
+          return current;
+        }
+
+        return {
+          ...current,
+          phase: "returning",
+          returnFrom:
+            currentDragVisual ?? createSourceDragTileVisual(current.sourceRect),
+        };
+      });
+      return;
+    }
+
+    setActiveHandDrag(null);
 
     const event: TilePlayedEvent = {
       eventId: Math.random().toString(36).substring(7) as EventId,
@@ -232,14 +315,25 @@ function GameView({
     };
     appendEvent(event);
   }, [
+    activeHandDrag,
     onDragEnd,
     currentRound,
+    currentDragVisual,
     game.gameId,
     events.length,
     isPlayerTurn,
     player1Id,
     appendEvent,
   ]);
+  const handleReturnAnimationComplete = useCallback((tileId: TileId) => {
+    setActiveHandDrag((current) => {
+      if (!current || current.tileId !== tileId) {
+        return current;
+      }
+
+      return null;
+    });
+  }, []);
 
   const [showDevTools, setShowDevTools] = useState(false);
 
@@ -554,13 +648,12 @@ function GameView({
           <BoardArea
             board={currentRound.board}
             layout={layout}
-            previewGeometry={previewGeometry}
             activeSnap={activeSnap}
           />
         </View>
 
         {/* Draw button when stuck */}
-        {isPlayerTurn && playableTileIds.size === 0 && !draggedTileId && (
+        {isPlayerTurn && playableTileIds.size === 0 && !activeHandDrag && (
           <View style={styles.drawButtonContainer}>
             <Pressable style={styles.drawButton} onPress={handleDraw}>
               <Text style={styles.drawButtonText}>
@@ -626,12 +719,21 @@ function GameView({
           <PlayerHand
             hand={playerHand}
             playableTileIds={playableTileIds}
-            isInteractionEnabled={isPlayerTurn}
-            onDragStart={onDragStart}
+            hiddenTileId={activeHandDrag?.tileId ?? null}
+            isInteractionEnabled={isBoardInteractionEnabled}
+            onDragStart={handleHandDragStart}
             onDragUpdate={onDragUpdate}
             onDragEnd={handleDragEnd}
           />
         </View>
+      </View>
+
+      <View pointerEvents="none" style={styles.dragOverlay}>
+        <HandDragOverlay
+          drag={activeHandDrag}
+          currentVisual={currentDragVisual}
+          onReturnComplete={handleReturnAnimationComplete}
+        />
       </View>
 
       {showDevTools && (
@@ -747,6 +849,10 @@ const styles = StyleSheet.create((theme) => ({
   },
   handWrapper: {
     zIndex: 5,
+  },
+  dragOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 25,
   },
 
   boneyardWrapper: {

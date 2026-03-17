@@ -1,8 +1,10 @@
-import React, { useState } from "react";
-import { ScrollView, View } from "react-native";
+import React, { useCallback, useRef, useState } from "react";
+import { View } from "react-native";
+import { ScrollView } from "react-native-gesture-handler";
 import { StyleSheet } from "react-native-unistyles";
 
 import { DraggableHandTile } from "./DraggableHandTile";
+import { HandTileDragStart } from "./hand-drag.types";
 import { spacing } from "@/theme/tokens";
 
 import { TileId } from "@/src/game-domain/types";
@@ -11,7 +13,8 @@ interface PlayerHandProps {
   hand: { id: TileId; value1: number; value2: number }[];
   playableTileIds: Set<TileId>;
   isInteractionEnabled: boolean;
-  onDragStart: (tileId: TileId) => void;
+  hiddenTileId: TileId | null;
+  onDragStart: (dragStart: HandTileDragStart) => void;
   onDragUpdate: (x: number, y: number) => void;
   onDragEnd: () => void;
 }
@@ -20,35 +23,69 @@ export const PlayerHand: React.FC<PlayerHandProps> = ({
   hand,
   playableTileIds,
   isInteractionEnabled,
+  hiddenTileId,
   onDragStart,
   onDragUpdate,
   onDragEnd,
 }) => {
-  // Lock horizontal scrolling while a tile is being dragged
   const [isDraggingAny, setIsDraggingAny] = useState(false);
+  const tileWrapperRefs = useRef<Record<TileId, View | null>>({} as Record<
+    TileId,
+    View | null
+  >);
+  const isScrollable = hand.length >= 8;
 
-  const handleDragStart = (tileId: TileId) => {
-    setIsDraggingAny(true);
-    onDragStart(tileId);
-  };
+  const setTileWrapperRef = useCallback(
+    (tileId: TileId) => (view: View | null) => {
+      tileWrapperRefs.current[tileId] = view;
+    },
+    [],
+  );
+
+  const handleDragStart = useCallback(
+    (tileId: TileId) => {
+      const tileWrapper = tileWrapperRefs.current[tileId];
+
+      if (!tileWrapper) {
+        return;
+      }
+
+      tileWrapper.measureInWindow((x, y, width, height) => {
+        setIsDraggingAny(true);
+        onDragStart({
+          tileId,
+          sourceRect: { x, y, width, height },
+        });
+      });
+    },
+    [onDragStart],
+  );
 
   const handleDragEnd = () => {
     setIsDraggingAny(false);
     onDragEnd();
   };
 
-  const isScrollable = hand.length >= 8;
-
   const content = (
     <>
       {hand.map((tile) => (
-        <View key={tile.id} style={styles.tileWrapper}>
+        <View
+          key={tile.id}
+          ref={setTileWrapperRef(tile.id)}
+          collapsable={false}
+          style={styles.tileWrapper}
+        >
           <DraggableHandTile
             tileId={tile.id}
             value1={tile.value1}
             value2={tile.value2}
             isPlayable={playableTileIds.has(tile.id)}
-            isInteractionEnabled={isInteractionEnabled}
+            isHidden={hiddenTileId === tile.id}
+            isInteractionEnabled={
+              isInteractionEnabled &&
+              (hiddenTileId === null || hiddenTileId === tile.id)
+            }
+            usesVerticalDragActivation={isScrollable}
             onDragStart={handleDragStart}
             onDragUpdate={onDragUpdate}
             onDragEnd={handleDragEnd}
@@ -63,8 +100,9 @@ export const PlayerHand: React.FC<PlayerHandProps> = ({
       <View style={styles.scrollWrapper}>
         <ScrollView
           horizontal
+          directionalLockEnabled
           showsHorizontalScrollIndicator={false}
-          scrollEnabled={!isDraggingAny}
+          scrollEnabled={!isDraggingAny && hiddenTileId === null}
           contentContainerStyle={styles.scrollContent}
         >
           {content}
