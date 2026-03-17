@@ -154,5 +154,39 @@ describe("viewport-fit", () => {
       expect(transform.translateX).toBeCloseTo(46.15, 1);
       expect(transform.translateY).toBe(400);
     });
+
+    it("centers toward occupied tiles while keeping asymmetric playable bounds visible", () => {
+      const occupiedBounds: Rect = { x: -84, y: -56, width: 168, height: 280 };
+      const playableBounds: Rect = { x: -84, y: -56, width: 280, height: 280 };
+      const transform = computeFitTransform(
+        occupiedBounds,
+        viewport,
+        padding,
+        playableBounds,
+      );
+      const scaledPadding = padding * transform.scale;
+      const occupiedCenterX =
+        (occupiedBounds.x + occupiedBounds.width / 2) * transform.scale +
+        transform.translateX;
+      const playableLeft = playableBounds.x * transform.scale + transform.translateX;
+      const playableRight =
+        (playableBounds.x + playableBounds.width) * transform.scale +
+        transform.translateX;
+      const playableCenterTransform = computeFitTransform(
+        playableBounds,
+        viewport,
+        padding,
+      );
+      const oldOccupiedCenterX =
+        (occupiedBounds.x + occupiedBounds.width / 2) *
+          playableCenterTransform.scale +
+        playableCenterTransform.translateX;
+
+      expect(transform.scale).toBe(1);
+      expect(occupiedCenterX).toBeCloseTo(184, 1);
+      expect(occupiedCenterX).toBeGreaterThan(oldOccupiedCenterX);
+      expect(playableLeft).toBeGreaterThanOrEqual(scaledPadding - 0.5);
+      expect(playableRight).toBeLessThanOrEqual(viewport.width - scaledPadding + 0.5);
+    });
   });
 });

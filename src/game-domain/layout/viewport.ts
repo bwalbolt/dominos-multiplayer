@@ -140,8 +140,17 @@ export function computeFitTransform(
   // To center boardCenter at viewportCenter:
   // viewportCenter = (boardCenter * scale) + translation
   // translation = viewportCenter - (boardCenter * scale)
-  const translateX = viewportCenterX - (boardCenterX * scale);
-  const translateY = viewportCenterY - (boardCenterY * scale);
+  const preferredTranslateX = viewportCenterX - (boardCenterX * scale);
+  const preferredTranslateY = viewportCenterY - (boardCenterY * scale);
+  const paddingScreen = padding * scale;
+  const minTranslateX = paddingScreen - fitBounds.x * scale;
+  const maxTranslateX =
+    viewport.width - paddingScreen - (fitBounds.x + fitBounds.width) * scale;
+  const minTranslateY = paddingScreen - fitBounds.y * scale;
+  const maxTranslateY =
+    viewport.height - paddingScreen - (fitBounds.y + fitBounds.height) * scale;
+  const translateX = clamp(preferredTranslateX, minTranslateX, maxTranslateX);
+  const translateY = clamp(preferredTranslateY, minTranslateY, maxTranslateY);
 
   // Round to avoid sub-pixel floating point jitter
   return {
@@ -149,4 +158,12 @@ export function computeFitTransform(
     translateX: Math.round(translateX * 100) / 100,
     translateY: Math.round(translateY * 100) / 100,
   };
+}
+
+function clamp(value: number, min: number, max: number): number {
+  if (min > max) {
+    return (min + max) / 2;
+  }
+
+  return Math.min(Math.max(value, min), max);
 }

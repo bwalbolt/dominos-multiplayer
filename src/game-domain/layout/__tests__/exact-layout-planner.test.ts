@@ -65,6 +65,46 @@ const assertNoTileOrSlotOverlap = (
   }
 };
 
+const assertNoUnrelatedEdgeTouch = (
+  tiles: readonly PlacedTileGeometry[],
+  rootTileId: TileId,
+) => {
+  const armPositions = new Map<TileId, { side: PlacedTileGeometry["logicalSide"]; index: number }>();
+
+  for (const side of ["left", "right", "up", "down"] as const) {
+    const armTiles = tiles
+      .filter((tile) => tile.tileId !== rootTileId && tile.logicalSide === side)
+      .sort((left, right) => left.placedAtSeq - right.placedAtSeq);
+
+    armTiles.forEach((tile, index) => {
+      armPositions.set(tile.tileId, { side, index });
+    });
+  }
+
+  for (let i = 0; i < tiles.length; i += 1) {
+    for (let j = i + 1; j < tiles.length; j += 1) {
+      const left = tiles[i];
+      const right = tiles[j];
+      const leftPosition = armPositions.get(left.tileId);
+      const rightPosition = armPositions.get(right.tileId);
+      const sameArmAdjacent =
+        leftPosition !== undefined &&
+        rightPosition !== undefined &&
+        leftPosition.side === rightPosition.side &&
+        Math.abs(leftPosition.index - rightPosition.index) === 1;
+      const rootToFirstArm =
+        (left.tileId === rootTileId && rightPosition?.index === 0) ||
+        (right.tileId === rootTileId && leftPosition?.index === 0);
+
+      if (sameArmAdjacent || rootToFirstArm) {
+        continue;
+      }
+
+      expect(rectsTouchOnEdge(rectFromTile(left), rectFromTile(right))).toBe(false);
+    }
+  }
+};
+
 describe("exact layout planner", () => {
   it("chooses a portrait-friendly root orientation for long two-arm boards", () => {
     const root = createTile("root", 6, 5);
@@ -154,6 +194,7 @@ describe("exact layout planner", () => {
     });
 
     assertNoTileOrSlotOverlap(solution.geometry.placedTiles, solution.openSlots);
+    assertNoUnrelatedEdgeTouch(solution.geometry.placedTiles, root.id);
     expect(solution.score.clarityViolation).toBe(0);
     expect(solution.score.proximityPenalty).toBe(0);
     expect(solution.fitScale).toBeLessThanOrEqual(1);
@@ -325,5 +366,50 @@ describe("exact layout planner", () => {
     expect(solution.bendPlan.up.length).toBeGreaterThan(1);
     expect(wrappedRightTile?.center.y).toBeGreaterThan(0);
     expect(wrappedUpTile?.center.y).toBeLessThan(0);
+  });
+
+  it("keeps lower wrapped arms from touching a neighboring lane", () => {
+    const root = createTile("root", 6, 6);
+    const left1 = createTile("l1", 6, 5);
+    const left2 = createTile("l2", 5, 4);
+    const left3 = createTile("l3", 4, 2);
+    const right1 = createTile("r1", 6, 4);
+    const right2 = createTile("r2", 4, 4);
+    const right3 = createTile("r3", 4, 3);
+    const down1 = createTile("d1", 6, 2);
+    const down2 = createTile("d2", 2, 2);
+    const down3 = createTile("d3", 2, 1);
+
+    const board: BoardState = {
+      layoutDirection: "wrapped",
+      spinnerTileId: root.id,
+      openEnds: [
+        { side: "left", pip: 2, tileId: left3.id },
+        { side: "right", pip: 3, tileId: right3.id },
+        { side: "up", pip: 6, tileId: root.id },
+        { side: "down", pip: 1, tileId: down3.id },
+      ],
+      tiles: [
+        { tile: root, playedBy: player1, placedAtSeq: 1, side: "left", openPipFacingOutward: 6 },
+        { tile: left1, playedBy: player1, placedAtSeq: 2, side: "left", openPipFacingOutward: 5 },
+        { tile: right1, playedBy: player1, placedAtSeq: 3, side: "right", openPipFacingOutward: 4 },
+        { tile: down1, playedBy: player1, placedAtSeq: 4, side: "down", openPipFacingOutward: 2 },
+        { tile: left2, playedBy: player1, placedAtSeq: 5, side: "left", openPipFacingOutward: 4 },
+        { tile: right2, playedBy: player1, placedAtSeq: 6, side: "right", openPipFacingOutward: 4 },
+        { tile: down2, playedBy: player1, placedAtSeq: 7, side: "down", openPipFacingOutward: 2 },
+        { tile: left3, playedBy: player1, placedAtSeq: 8, side: "left", openPipFacingOutward: 2 },
+        { tile: right3, playedBy: player1, placedAtSeq: 9, side: "right", openPipFacingOutward: 3 },
+        { tile: down3, playedBy: player1, placedAtSeq: 10, side: "down", openPipFacingOutward: 1 },
+      ],
+    };
+
+    const solution = solveBoardLayout(board, {
+      viewport: { width: 320, height: 420 },
+      padding: 40,
+    });
+
+    assertNoTileOrSlotOverlap(solution.geometry.placedTiles, solution.openSlots);
+    assertNoUnrelatedEdgeTouch(solution.geometry.placedTiles, root.id);
+    expect(solution.score.clarityViolation).toBe(0);
   });
 });

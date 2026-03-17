@@ -1010,12 +1010,18 @@ function buildCandidateStates(
       continue;
     }
 
-    candidates.push({
+    const candidateState: SearchState = {
       placedTiles: [...state.placedTiles, tile],
       tileRects: [...state.tileRects, tileRect],
       openSlots: nextOpenSlots,
       arms: nextArms,
-    });
+    };
+
+    if (hasUnrelatedEdgeTouch(candidateState, state.placedTiles[0]?.tileId ?? null)) {
+      continue;
+    }
+
+    candidates.push(candidateState);
   }
 
   candidates.sort((left, right) => {
@@ -1070,6 +1076,25 @@ function rectsOverlap(left: Rect, right: Rect): boolean {
   const overlapY = Math.min(left.y + left.height, right.y + right.height) - Math.max(left.y, right.y);
 
   return overlapX > 0.01 && overlapY > 0.01;
+}
+
+function rectsTouchOnEdge(left: Rect, right: Rect): boolean {
+  const horizontalGap = Math.min(
+    Math.abs(left.x + left.width - right.x),
+    Math.abs(right.x + right.width - left.x),
+  );
+  const verticalGap = Math.min(
+    Math.abs(left.y + left.height - right.y),
+    Math.abs(right.y + right.height - left.y),
+  );
+  const overlapX =
+    Math.min(left.x + left.width, right.x + right.width) -
+    Math.max(left.x, right.x);
+  const overlapY =
+    Math.min(left.y + left.height, right.y + right.height) -
+    Math.max(left.y, right.y);
+
+  return (horizontalGap <= 0.01 && overlapY > 0.01) || (verticalGap <= 0.01 && overlapX > 0.01);
 }
 
 function boundsFromRects(rects: readonly Rect[]): Rect {
@@ -1134,7 +1159,12 @@ function buildFinalSolution(
     ...publicPlacedTiles.map(rectFromTile),
     ...openSlots.map((slot) => slot.rect),
   ]);
-  const camera = computeFitTransform(playableBounds, viewport ?? DEFAULT_VIEWPORT, padding);
+  const camera = computeFitTransform(
+    occupiedBounds,
+    viewport ?? DEFAULT_VIEWPORT,
+    padding,
+    playableBounds,
+  );
   const score = computeScore(
     publicPlacedTiles,
     openSlots,
@@ -1221,7 +1251,13 @@ function buildOptimisticStateScore(
     ...state.tileRects,
     ...openSlots.map((slot) => slot.rect),
   ]);
-  const camera = computeFitTransform(playableBounds, viewport ?? DEFAULT_VIEWPORT, padding);
+  const occupiedBounds = boundsFromRects(state.tileRects);
+  const camera = computeFitTransform(
+    occupiedBounds,
+    viewport ?? DEFAULT_VIEWPORT,
+    padding,
+    playableBounds,
+  );
 
   return computeScore(
     state.placedTiles,
@@ -1375,6 +1411,11 @@ function buildLayoutClarityMetrics(
       }
 
       const spacing = measureSubjectSpacing(left, right);
+      if (spacing.edgeTouch) {
+        clarityViolation += HARD_CLARITY_THRESHOLD + HARD_ENDPOINT_THRESHOLD;
+        continue;
+      }
+
       clarityViolation +=
         Math.max(0, HARD_CLARITY_THRESHOLD - spacing.parallelGap) +
         Math.max(0, HARD_ENDPOINT_THRESHOLD - spacing.endpointGap);
@@ -1467,7 +1508,7 @@ function areRelatedSubjects(
   rootTileId: TileId | null,
 ): boolean {
   if (left.kind === "slot" && right.kind === "slot") {
-    return left.logicalSide === right.logicalSide || left.ownerTileId === right.ownerTileId;
+    return left.ownerTileId !== null && left.ownerTileId === right.ownerTileId;
   }
 
   if (left.kind === "slot" || right.kind === "slot") {
@@ -1478,7 +1519,11 @@ function areRelatedSubjects(
       return true;
     }
 
-    return slot.logicalSide === tile.logicalSide;
+    if (rootTileId !== null && tile.tileId === rootTileId && slot.armIndex === null) {
+      return true;
+    }
+
+    return false;
   }
 
   if (left.logicalSide === right.logicalSide && left.armIndex !== null && right.armIndex !== null) {
@@ -1507,6 +1552,7 @@ function measureSubjectSpacing(
   rectGap: number;
   parallelGap: number;
   endpointGap: number;
+  edgeTouch: boolean;
 }> {
   const overlapX = Math.min(left.rect.x + left.rect.width, right.rect.x + right.rect.width) -
     Math.max(left.rect.x, right.rect.x);
@@ -1532,11 +1578,38 @@ function measureSubjectSpacing(
       : Number.POSITIVE_INFINITY,
   );
 
+  const edgeTouch = rectsTouchOnEdge(left.rect, right.rect);
+
   return {
     rectGap: Math.hypot(gapX, gapY),
     parallelGap: Math.min(horizontalLaneGap, verticalLaneGap),
     endpointGap,
+    edgeTouch,
   };
+}
+
+function hasUnrelatedEdgeTouch(
+  state: SearchState,
+  rootTileId: TileId | null,
+): boolean {
+  const subjects = buildGeometrySubjects(state.placedTiles, state.openSlots, state.arms, rootTileId);
+
+  for (let leftIndex = 0; leftIndex < subjects.length; leftIndex += 1) {
+    for (let rightIndex = leftIndex + 1; rightIndex < subjects.length; rightIndex += 1) {
+      const left = subjects[leftIndex];
+      const right = subjects[rightIndex];
+
+      if (areRelatedSubjects(left, right, rootTileId)) {
+        continue;
+      }
+
+      if (rectsTouchOnEdge(left.rect, right.rect)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 function pointDistance(left: Point, right: Point): number {
