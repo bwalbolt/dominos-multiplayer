@@ -45,6 +45,10 @@ const TURN_RIGHT: Readonly<Record<LayoutOrientation, LayoutOrientation>> = {
   up: "right",
 };
 const SCORE_EPSILON = 0.000001;
+const HARD_CLARITY_THRESHOLD = 16;
+const HARD_ENDPOINT_THRESHOLD = 20;
+const SOFT_PROXIMITY_THRESHOLD = 10;
+const CLARITY_LANE_OVERLAP = domino.width / 2;
 
 type CalculateBoardGeometryOptions = {
   readonly viewport?: Size;
@@ -92,6 +96,22 @@ type SearchState = Readonly<{
   tileRects: readonly Rect[];
   openSlots: readonly LayoutOpenSlot[];
   arms: Readonly<Record<ChainSide, RuntimeArmState>>;
+}>;
+
+type GeometrySubject = Readonly<{
+  id: string;
+  kind: "tile" | "slot";
+  rect: Rect;
+  logicalSide: ChainSide;
+  tileId: TileId | null;
+  ownerTileId: TileId | null;
+  armIndex: number | null;
+  focusPoint: Point | null;
+}>;
+
+type ArmTilePosition = Readonly<{
+  side: ChainSide;
+  index: number;
 }>;
 
 export function calculateBoardGeometry(
@@ -299,7 +319,9 @@ function buildEmptySolution(
       down: [],
     },
     score: {
+      clarityViolation: 0,
       fitScale: viewport ? camera.scale : 1,
+      proximityPenalty: 0,
       compactness: 0,
       bendCount: 0,
       rightTurnCount: 0,
@@ -1000,31 +1022,20 @@ function buildCandidateStates(
     const leftScore = buildOptimisticScore(left);
     const rightScore = buildOptimisticScore(right);
 
-    if (Math.abs(leftScore.fitScale - rightScore.fitScale) > SCORE_EPSILON) {
-      return rightScore.fitScale - leftScore.fitScale;
-    }
-
-    if (Math.abs(leftScore.compactness - rightScore.compactness) > SCORE_EPSILON) {
-      return leftScore.compactness - rightScore.compactness;
-    }
-
-    return leftScore.rightTurnCount - rightScore.rightTurnCount;
+    return compareScores(leftScore, rightScore);
   });
 
   return candidates;
 }
 
 function buildOptimisticScore(state: SearchState): LayoutScore {
-  return {
-    fitScale: 1,
-    compactness: state.placedTiles.reduce(
-      (total, tile) => total + tile.center.x * tile.center.x + tile.center.y * tile.center.y,
-      0,
-    ),
-    bendCount: SIDE_ORDER.reduce((total, side) => total + state.arms[side].bends, 0),
-    rightTurnCount: SIDE_ORDER.reduce((total, side) => total + state.arms[side].rightTurns, 0),
-    leftTurnCount: SIDE_ORDER.reduce((total, side) => total + state.arms[side].leftTurns, 0),
-  };
+  return computeScore(
+    state.placedTiles,
+    state.openSlots,
+    1,
+    state.arms,
+    state.placedTiles[0]?.tileId ?? null,
+  );
 }
 
 function hasRectOverlap(candidateRect: Rect, rects: readonly Rect[]): boolean {
@@ -1124,7 +1135,13 @@ function buildFinalSolution(
     ...openSlots.map((slot) => slot.rect),
   ]);
   const camera = computeFitTransform(playableBounds, viewport ?? DEFAULT_VIEWPORT, padding);
-  const score = computeScore(publicPlacedTiles, camera.scale, state.arms);
+  const score = computeScore(
+    publicPlacedTiles,
+    openSlots,
+    camera.scale,
+    state.arms,
+    extracted.rootTile.tile.id,
+  );
 
   return {
     geometry: {
@@ -1206,21 +1223,37 @@ function buildOptimisticStateScore(
   ]);
   const camera = computeFitTransform(playableBounds, viewport ?? DEFAULT_VIEWPORT, padding);
 
-  return computeScore(state.placedTiles, viewport ? camera.scale : 1, state.arms);
+  return computeScore(
+    state.placedTiles,
+    openSlots,
+    viewport ? camera.scale : 1,
+    state.arms,
+    extracted.rootTile.tile.id,
+  );
 }
 
 function computeScore(
   placedTiles: readonly PlacedTileGeometry[],
+  openSlots: readonly LayoutOpenSlot[],
   fitScale: number,
   arms: Readonly<Record<ChainSide, RuntimeArmState>>,
+  rootTileId: TileId | null,
 ): LayoutScore {
+  const { clarityViolation, proximityPenalty } = buildLayoutClarityMetrics(
+    placedTiles,
+    openSlots,
+    arms,
+    rootTileId,
+  );
   const compactness = placedTiles.reduce(
     (total, tile) => total + tile.center.x * tile.center.x + tile.center.y * tile.center.y,
     0,
   );
 
   return {
+    clarityViolation,
     fitScale,
+    proximityPenalty,
     compactness,
     bendCount: SIDE_ORDER.reduce((total, side) => total + arms[side].bends, 0),
     rightTurnCount: SIDE_ORDER.reduce((total, side) => total + arms[side].rightTurns, 0),
@@ -1229,55 +1262,11 @@ function computeScore(
 }
 
 function canBeat(candidate: LayoutScore, best: LayoutScore): boolean {
-  if (candidate.fitScale < best.fitScale - SCORE_EPSILON) {
-    return false;
-  }
-
-  if (Math.abs(candidate.fitScale - best.fitScale) <= SCORE_EPSILON) {
-    if (candidate.compactness > best.compactness + SCORE_EPSILON) {
-      return false;
-    }
-
-    if (Math.abs(candidate.compactness - best.compactness) <= SCORE_EPSILON) {
-      if (candidate.bendCount > best.bendCount) {
-        return false;
-      }
-
-      if (candidate.bendCount === best.bendCount && candidate.rightTurnCount > best.rightTurnCount) {
-        return false;
-      }
-    }
-  }
-
-  return true;
+  return compareScores(candidate, best) <= 0;
 }
 
 function isBetterScore(left: LayoutScore, right: LayoutScore): boolean {
-  if (left.fitScale > right.fitScale + SCORE_EPSILON) {
-    return true;
-  }
-
-  if (left.fitScale < right.fitScale - SCORE_EPSILON) {
-    return false;
-  }
-
-  if (left.compactness < right.compactness - SCORE_EPSILON) {
-    return true;
-  }
-
-  if (left.compactness > right.compactness + SCORE_EPSILON) {
-    return false;
-  }
-
-  if (left.bendCount !== right.bendCount) {
-    return left.bendCount < right.bendCount;
-  }
-
-  if (left.rightTurnCount !== right.rightTurnCount) {
-    return left.rightTurnCount < right.rightTurnCount;
-  }
-
-  return left.leftTurnCount > right.leftTurnCount;
+  return compareScores(left, right) < 0;
 }
 
 function getSolveOrder(
@@ -1313,4 +1302,252 @@ function normalizeViewport(viewport: Size | null): Size | null {
   }
 
   return viewport;
+}
+
+function compareScores(left: LayoutScore, right: LayoutScore): number {
+  if (left.clarityViolation < right.clarityViolation - SCORE_EPSILON) {
+    return -1;
+  }
+
+  if (left.clarityViolation > right.clarityViolation + SCORE_EPSILON) {
+    return 1;
+  }
+
+  if (left.fitScale > right.fitScale + SCORE_EPSILON) {
+    return -1;
+  }
+
+  if (left.fitScale < right.fitScale - SCORE_EPSILON) {
+    return 1;
+  }
+
+  if (left.proximityPenalty < right.proximityPenalty - SCORE_EPSILON) {
+    return -1;
+  }
+
+  if (left.proximityPenalty > right.proximityPenalty + SCORE_EPSILON) {
+    return 1;
+  }
+
+  if (left.compactness < right.compactness - SCORE_EPSILON) {
+    return -1;
+  }
+
+  if (left.compactness > right.compactness + SCORE_EPSILON) {
+    return 1;
+  }
+
+  if (left.bendCount !== right.bendCount) {
+    return left.bendCount - right.bendCount;
+  }
+
+  if (left.rightTurnCount !== right.rightTurnCount) {
+    return left.rightTurnCount - right.rightTurnCount;
+  }
+
+  if (left.leftTurnCount !== right.leftTurnCount) {
+    return right.leftTurnCount - left.leftTurnCount;
+  }
+
+  return 0;
+}
+
+function buildLayoutClarityMetrics(
+  placedTiles: readonly PlacedTileGeometry[],
+  openSlots: readonly LayoutOpenSlot[],
+  arms: Readonly<Record<ChainSide, RuntimeArmState>>,
+  rootTileId: TileId | null,
+): Readonly<{
+  clarityViolation: number;
+  proximityPenalty: number;
+}> {
+  const subjects = buildGeometrySubjects(placedTiles, openSlots, arms, rootTileId);
+  let clarityViolation = 0;
+  let proximityPenalty = 0;
+
+  for (let leftIndex = 0; leftIndex < subjects.length; leftIndex += 1) {
+    for (let rightIndex = leftIndex + 1; rightIndex < subjects.length; rightIndex += 1) {
+      const left = subjects[leftIndex];
+      const right = subjects[rightIndex];
+
+      if (areRelatedSubjects(left, right, rootTileId)) {
+        continue;
+      }
+
+      const spacing = measureSubjectSpacing(left, right);
+      clarityViolation +=
+        Math.max(0, HARD_CLARITY_THRESHOLD - spacing.parallelGap) +
+        Math.max(0, HARD_ENDPOINT_THRESHOLD - spacing.endpointGap);
+
+      const preferredGap = Math.min(spacing.rectGap, spacing.endpointGap);
+      if (preferredGap < SOFT_PROXIMITY_THRESHOLD) {
+        const crowding = SOFT_PROXIMITY_THRESHOLD - preferredGap;
+        proximityPenalty += crowding * crowding;
+      }
+    }
+  }
+
+  return {
+    clarityViolation,
+    proximityPenalty,
+  };
+}
+
+function buildGeometrySubjects(
+  placedTiles: readonly PlacedTileGeometry[],
+  openSlots: readonly LayoutOpenSlot[],
+  arms: Readonly<Record<ChainSide, RuntimeArmState>>,
+  rootTileId: TileId | null,
+): readonly GeometrySubject[] {
+  const armTilePositions = buildArmTilePositions(arms);
+  const endpointTileIds = new Set<TileId>(
+    SIDE_ORDER.flatMap((side) => {
+      const tileId = arms[side].placedCount > 0 ? arms[side].lastTileId : null;
+      return tileId ? [tileId] : [];
+    }),
+  );
+
+  const tileSubjects = placedTiles.map<GeometrySubject>((tile) => {
+    const position = armTilePositions.get(tile.tileId);
+
+    return {
+      id: `tile:${tile.tileId}`,
+      kind: "tile",
+      rect: rectFromTile(tile),
+      logicalSide: position?.side ?? tile.logicalSide,
+      tileId: tile.tileId,
+      ownerTileId: null,
+      armIndex: position?.index ?? null,
+      focusPoint: endpointTileIds.has(tile.tileId) ? getOpenFaceCenter(tile, tile.heading) : null,
+    };
+  });
+
+  const slotSubjects = openSlots.map<GeometrySubject>((slot) => {
+    const arm = arms[slot.side];
+    const ownerTileId = arm.placedCount > 0 ? arm.lastTileId : rootTileId;
+
+    return {
+      id: `slot:${slot.side}:${ownerTileId ?? "root"}`,
+      kind: "slot",
+      rect: slot.rect,
+      logicalSide: slot.side,
+      tileId: null,
+      ownerTileId,
+      armIndex: arm.placedCount > 0 ? arm.placedCount - 1 : null,
+      focusPoint: slot.attachmentPoint,
+    };
+  });
+
+  return [...tileSubjects, ...slotSubjects];
+}
+
+function buildArmTilePositions(
+  arms: Readonly<Record<ChainSide, RuntimeArmState>>,
+): ReadonlyMap<TileId, ArmTilePosition> {
+  const positions = new Map<TileId, ArmTilePosition>();
+
+  for (const side of SIDE_ORDER) {
+    const arm = arms[side];
+
+    for (let index = 0; index < arm.placedCount; index += 1) {
+      const tile = arm.tiles[index];
+
+      if (tile) {
+        positions.set(tile.tile.id, { side, index });
+      }
+    }
+  }
+
+  return positions;
+}
+
+function areRelatedSubjects(
+  left: GeometrySubject,
+  right: GeometrySubject,
+  rootTileId: TileId | null,
+): boolean {
+  if (left.kind === "slot" && right.kind === "slot") {
+    return left.logicalSide === right.logicalSide || left.ownerTileId === right.ownerTileId;
+  }
+
+  if (left.kind === "slot" || right.kind === "slot") {
+    const slot = left.kind === "slot" ? left : right;
+    const tile = left.kind === "tile" ? left : right;
+
+    if (slot.ownerTileId === tile.tileId) {
+      return true;
+    }
+
+    return slot.logicalSide === tile.logicalSide;
+  }
+
+  if (left.logicalSide === right.logicalSide && left.armIndex !== null && right.armIndex !== null) {
+    return Math.abs(left.armIndex - right.armIndex) === 1;
+  }
+
+  if (rootTileId === null) {
+    return false;
+  }
+
+  if (left.tileId === rootTileId && right.armIndex === 0) {
+    return true;
+  }
+
+  if (right.tileId === rootTileId && left.armIndex === 0) {
+    return true;
+  }
+
+  return false;
+}
+
+function measureSubjectSpacing(
+  left: GeometrySubject,
+  right: GeometrySubject,
+): Readonly<{
+  rectGap: number;
+  parallelGap: number;
+  endpointGap: number;
+}> {
+  const overlapX = Math.min(left.rect.x + left.rect.width, right.rect.x + right.rect.width) -
+    Math.max(left.rect.x, right.rect.x);
+  const overlapY = Math.min(left.rect.y + left.rect.height, right.rect.y + right.rect.height) -
+    Math.max(left.rect.y, right.rect.y);
+  const gapX = Math.max(
+    0,
+    Math.max(left.rect.x - (right.rect.x + right.rect.width), right.rect.x - (left.rect.x + left.rect.width)),
+  );
+  const gapY = Math.max(
+    0,
+    Math.max(left.rect.y - (right.rect.y + right.rect.height), right.rect.y - (left.rect.y + left.rect.height)),
+  );
+  const horizontalLaneGap =
+    gapX > 0 && overlapY > CLARITY_LANE_OVERLAP ? gapX : Number.POSITIVE_INFINITY;
+  const verticalLaneGap =
+    gapY > 0 && overlapX > CLARITY_LANE_OVERLAP ? gapY : Number.POSITIVE_INFINITY;
+  const endpointGap = Math.min(
+    left.focusPoint ? pointToRectDistance(left.focusPoint, right.rect) : Number.POSITIVE_INFINITY,
+    right.focusPoint ? pointToRectDistance(right.focusPoint, left.rect) : Number.POSITIVE_INFINITY,
+    left.focusPoint && right.focusPoint
+      ? pointDistance(left.focusPoint, right.focusPoint)
+      : Number.POSITIVE_INFINITY,
+  );
+
+  return {
+    rectGap: Math.hypot(gapX, gapY),
+    parallelGap: Math.min(horizontalLaneGap, verticalLaneGap),
+    endpointGap,
+  };
+}
+
+function pointDistance(left: Point, right: Point): number {
+  return Math.hypot(left.x - right.x, left.y - right.y);
+}
+
+function pointToRectDistance(point: Point, rect: Rect): number {
+  const dx =
+    point.x < rect.x ? rect.x - point.x : point.x > rect.x + rect.width ? point.x - (rect.x + rect.width) : 0;
+  const dy =
+    point.y < rect.y ? rect.y - point.y : point.y > rect.y + rect.height ? point.y - (rect.y + rect.height) : 0;
+
+  return Math.hypot(dx, dy);
 }

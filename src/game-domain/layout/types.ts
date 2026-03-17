@@ -112,7 +112,9 @@ export type BoardLayoutProblem = {
 };
 
 export type LayoutScore = {
+  readonly clarityViolation: number;
   readonly fitScale: number;
+  readonly proximityPenalty: number;
   readonly compactness: number;
   readonly bendCount: number;
   readonly rightTurnCount: number;

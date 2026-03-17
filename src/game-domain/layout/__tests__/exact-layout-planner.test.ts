@@ -154,6 +154,8 @@ describe("exact layout planner", () => {
     });
 
     assertNoTileOrSlotOverlap(solution.geometry.placedTiles, solution.openSlots);
+    expect(solution.score.clarityViolation).toBe(0);
+    expect(solution.score.proximityPenalty).toBe(0);
     expect(solution.fitScale).toBeLessThanOrEqual(1);
     const scaledPadding = 56 * solution.camera.scale;
 
@@ -275,5 +277,53 @@ describe("exact layout planner", () => {
 
     expect(second).toEqual(first);
     expect(calculateBoardGeometry(board, { viewport: { width: 402, height: 560 }, padding: 56 })).toEqual(first.geometry);
+  });
+
+  it("routes competing wrapped arms into separate readable lanes", () => {
+    const root = createTile("root", 6, 6);
+    const right1 = createTile("r1", 6, 5);
+    const right2 = createTile("r2", 5, 4);
+    const right3 = createTile("r3", 4, 3);
+    const right4 = createTile("r4", 3, 2);
+    const up1 = createTile("u1", 6, 1);
+    const up2 = createTile("u2", 1, 2);
+    const up3 = createTile("u3", 2, 3);
+    const up4 = createTile("u4", 3, 4);
+
+    const board: BoardState = {
+      layoutDirection: "wrapped",
+      spinnerTileId: root.id,
+      openEnds: [
+        { side: "left", pip: 6, tileId: root.id },
+        { side: "right", pip: 2, tileId: right4.id },
+        { side: "up", pip: 4, tileId: up4.id },
+        { side: "down", pip: 6, tileId: root.id },
+      ],
+      tiles: [
+        { tile: root, playedBy: player1, placedAtSeq: 1, side: "left", openPipFacingOutward: 6 },
+        { tile: right1, playedBy: player1, placedAtSeq: 2, side: "right", openPipFacingOutward: 5 },
+        { tile: up1, playedBy: player1, placedAtSeq: 3, side: "up", openPipFacingOutward: 1 },
+        { tile: right2, playedBy: player1, placedAtSeq: 4, side: "right", openPipFacingOutward: 4 },
+        { tile: up2, playedBy: player1, placedAtSeq: 5, side: "up", openPipFacingOutward: 2 },
+        { tile: right3, playedBy: player1, placedAtSeq: 6, side: "right", openPipFacingOutward: 3 },
+        { tile: up3, playedBy: player1, placedAtSeq: 7, side: "up", openPipFacingOutward: 3 },
+        { tile: right4, playedBy: player1, placedAtSeq: 8, side: "right", openPipFacingOutward: 2 },
+        { tile: up4, playedBy: player1, placedAtSeq: 9, side: "up", openPipFacingOutward: 4 },
+      ],
+    };
+
+    const solution = solveBoardLayout(board, {
+      viewport: { width: 320, height: 420 },
+      padding: 40,
+    });
+    const wrappedRightTile = solution.geometry.placedTiles.find((tile) => tile.tileId === right2.id);
+    const wrappedUpTile = solution.geometry.placedTiles.find((tile) => tile.tileId === up2.id);
+
+    expect(solution.score.clarityViolation).toBe(0);
+    expect(solution.score.proximityPenalty).toBe(0);
+    expect(solution.bendPlan.right.length).toBeGreaterThan(1);
+    expect(solution.bendPlan.up.length).toBeGreaterThan(1);
+    expect(wrappedRightTile?.center.y).toBeGreaterThan(0);
+    expect(wrappedUpTile?.center.y).toBeLessThan(0);
   });
 });

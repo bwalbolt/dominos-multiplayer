@@ -80,7 +80,9 @@ const createSolution = (
   camera,
   bendPlan,
   score: {
+    clarityViolation: 0,
     fitScale: 1,
+    proximityPenalty: 0,
     compactness: 0,
     bendCount: 0,
     rightTurnCount: 0,
