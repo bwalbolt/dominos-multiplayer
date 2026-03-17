@@ -21,6 +21,7 @@ describe("hand drag visual helpers", () => {
     const visual = resolveDraggedTileVisual({
       sourceRect: { x: 200, y: 300, width: 47.6, height: 99.45 },
       dragScreenPosition: { x: 260, y: 360 },
+      fallbackVisual: null,
       previewGeometry: {
         tileId: "tile-6-5" as TileId,
         value1: 6,
@@ -49,6 +50,7 @@ describe("hand drag visual helpers", () => {
     const visual = resolveDraggedTileVisual({
       sourceRect: { x: 120, y: 200, width: 47.6, height: 99.45 },
       dragScreenPosition: { x: 180, y: 260 },
+      fallbackVisual: null,
       previewGeometry: null,
       cameraTransform: { scale: 1, translateX: 0, translateY: 0 },
       containerOffset: { x: 0, y: 0 },
@@ -66,5 +68,26 @@ describe("hand drag visual helpers", () => {
     expect(visual?.top).toBeCloseTo(210.275);
     expect(visual?.scale).toBeCloseTo(sourceVisual.scale);
     expect(visual?.orientation).toBe("up");
+  });
+
+  it("uses the fallback visual before a free drag receives its first update", () => {
+    const fallbackVisual = {
+      left: 120,
+      top: 200,
+      scale: 0.85,
+      orientation: "up" as const,
+    };
+
+    expect(
+      resolveDraggedTileVisual({
+        sourceRect: { x: 120, y: 200, width: 47.6, height: 99.45 },
+        dragScreenPosition: null,
+        fallbackVisual,
+        previewGeometry: null,
+        cameraTransform: { scale: 1, translateX: 0, translateY: 0 },
+        containerOffset: { x: 0, y: 0 },
+        isSnapped: false,
+      }),
+    ).toEqual(fallbackVisual);
   });
 });

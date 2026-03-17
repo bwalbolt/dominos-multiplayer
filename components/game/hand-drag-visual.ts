@@ -11,6 +11,7 @@ import { DragTileVisual, ScreenRect } from "./hand-drag.types";
 type ResolveDraggedTileVisualInput = Readonly<{
   sourceRect: ScreenRect;
   dragScreenPosition: Point | null;
+  fallbackVisual: DragTileVisual | null;
   previewGeometry: PlacedTileGeometry | null;
   cameraTransform: CameraTransform;
   containerOffset: Point;
@@ -60,7 +61,7 @@ export function resolveDraggedTileVisual(
   }
 
   if (!input.dragScreenPosition) {
-    return null;
+    return input.fallbackVisual;
   }
 
   return {

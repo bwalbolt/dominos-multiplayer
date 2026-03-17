@@ -4,6 +4,7 @@ import { ScrollView } from "react-native-gesture-handler";
 import { StyleSheet } from "react-native-unistyles";
 
 import { DraggableHandTile } from "./DraggableHandTile";
+import { resolveHandTileInteractionEnabled } from "./hand-interaction";
 import { HandTileDragStart } from "./hand-drag.types";
 import { spacing } from "@/theme/tokens";
 
@@ -13,7 +14,9 @@ interface PlayerHandProps {
   hand: { id: TileId; value1: number; value2: number }[];
   playableTileIds: Set<TileId>;
   isInteractionEnabled: boolean;
-  hiddenTileId: TileId | null;
+  hiddenTileIds: ReadonlySet<TileId>;
+  hasActiveDrag: boolean;
+  activeTileId: TileId | null;
   onDragStart: (dragStart: HandTileDragStart) => void;
   onDragUpdate: (x: number, y: number) => void;
   onDragEnd: () => void;
@@ -23,7 +26,9 @@ export const PlayerHand: React.FC<PlayerHandProps> = ({
   hand,
   playableTileIds,
   isInteractionEnabled,
-  hiddenTileId,
+  hiddenTileIds,
+  hasActiveDrag,
+  activeTileId,
   onDragStart,
   onDragUpdate,
   onDragEnd,
@@ -80,11 +85,13 @@ export const PlayerHand: React.FC<PlayerHandProps> = ({
             value1={tile.value1}
             value2={tile.value2}
             isPlayable={playableTileIds.has(tile.id)}
-            isHidden={hiddenTileId === tile.id}
-            isInteractionEnabled={
-              isInteractionEnabled &&
-              (hiddenTileId === null || hiddenTileId === tile.id)
-            }
+            isHidden={hiddenTileIds.has(tile.id)}
+            isInteractionEnabled={resolveHandTileInteractionEnabled({
+              tileId: tile.id,
+              isInteractionEnabled,
+              hasActiveDrag,
+              activeTileId,
+            })}
             usesVerticalDragActivation={isScrollable}
             onDragStart={handleDragStart}
             onDragUpdate={onDragUpdate}
@@ -102,7 +109,7 @@ export const PlayerHand: React.FC<PlayerHandProps> = ({
           horizontal
           directionalLockEnabled
           showsHorizontalScrollIndicator={false}
-          scrollEnabled={!isDraggingAny && hiddenTileId === null}
+          scrollEnabled={!isDraggingAny && !hasActiveDrag}
           contentContainerStyle={styles.scrollContent}
         >
           {content}

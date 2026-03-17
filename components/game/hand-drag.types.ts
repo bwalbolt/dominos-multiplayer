@@ -13,6 +13,11 @@ export type HandTileDragStart = Readonly<{
   sourceRect: ScreenRect;
 }>;
 
+export type ScreenPoint = Readonly<{
+  x: number;
+  y: number;
+}>;
+
 export type DragTileVisual = Readonly<{
   left: number;
   top: number;
@@ -25,6 +30,15 @@ export type ActiveHandDrag = Readonly<{
   value1: DominoPip;
   value2: DominoPip;
   sourceRect: ScreenRect;
-  phase: "dragging" | "returning";
-  returnFrom: DragTileVisual | null;
+  initialVisual: DragTileVisual | null;
+}>;
+
+export type ReturningHandDrag = Readonly<{
+  returnId: string;
+  tileId: TileId;
+  value1: DominoPip;
+  value2: DominoPip;
+  sourceRect: ScreenRect;
+  returnFrom: DragTileVisual;
+  isPromotedToActive: boolean;
 }>;
