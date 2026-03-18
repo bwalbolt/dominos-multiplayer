@@ -5,9 +5,12 @@ import {
 } from "../board-depth";
 import { PlacedTileGeometry } from "../types";
 import { domino } from "../../../../theme/tokens";
+import type { TileId } from "../../types";
+
+const asTileId = (value: string): TileId => value as TileId;
 
 const createPlacedTile = (
-  tileId: string,
+  tileId: TileId,
   center: { x: number; y: number },
   rotationDeg: number,
   placedAtSeq: number,
@@ -15,7 +18,7 @@ const createPlacedTile = (
   const isVertical = rotationDeg === 0 || rotationDeg === 180;
 
   return {
-    tileId: tileId as PlacedTileGeometry["tileId"],
+    tileId,
     value1: 6,
     value2: 6,
     center,
@@ -30,8 +33,8 @@ const createPlacedTile = (
 
 describe("board-depth", () => {
   it("sorts tiles from back to front using the tile bottom edge", () => {
-    const higherTile = createPlacedTile("higher", { x: 0, y: -84 }, 0, 1);
-    const lowerTile = createPlacedTile("lower", { x: 0, y: 84 }, 0, 2);
+    const higherTile = createPlacedTile(asTileId("higher"), { x: 0, y: -84 }, 0, 1);
+    const lowerTile = createPlacedTile(asTileId("lower"), { x: 0, y: 84 }, 0, 2);
 
     expect(getBoardTileBottomEdge(higherTile)).toBeLessThan(
       getBoardTileBottomEdge(lowerTile),
@@ -44,9 +47,9 @@ describe("board-depth", () => {
   });
 
   it("uses center.x and then placedAtSeq as stable tie-breakers", () => {
-    const leftTile = createPlacedTile("left", { x: -56, y: 0 }, 90, 3);
-    const rightTile = createPlacedTile("right", { x: 56, y: 0 }, 90, 2);
-    const laterTile = createPlacedTile("later", { x: 56, y: 0 }, 90, 4);
+    const leftTile = createPlacedTile(asTileId("left"), { x: -56, y: 0 }, 90, 3);
+    const rightTile = createPlacedTile(asTileId("right"), { x: 56, y: 0 }, 90, 2);
+    const laterTile = createPlacedTile(asTileId("later"), { x: 56, y: 0 }, 90, 4);
 
     expect(compareBoardTileDepth(leftTile, rightTile)).toBeLessThan(0);
     expect(compareBoardTileDepth(rightTile, laterTile)).toBeLessThan(0);
@@ -58,9 +61,9 @@ describe("board-depth", () => {
   });
 
   it("uses actual tile height so mixed orientations stack correctly", () => {
-    const verticalTile = createPlacedTile("vertical", { x: 0, y: 0 }, 0, 1);
+    const verticalTile = createPlacedTile(asTileId("vertical"), { x: 0, y: 0 }, 0, 1);
     const horizontalTile = createPlacedTile(
-      "horizontal",
+      asTileId("horizontal"),
       { x: 0, y: 10 },
       90,
       2,
@@ -76,10 +79,10 @@ describe("board-depth", () => {
   });
 
   it("updates stack order when a relayout bends a suffix into a lower row", () => {
-    const root = createPlacedTile("root", { x: 0, y: 0 }, 90, 1);
-    const rightOneBefore = createPlacedTile("right-1", { x: 84, y: 0 }, 90, 2);
-    const rightTwoBefore = createPlacedTile("right-2", { x: 168, y: 0 }, 90, 3);
-    const downOne = createPlacedTile("down-1", { x: 0, y: 84 }, 0, 4);
+    const root = createPlacedTile(asTileId("root"), { x: 0, y: 0 }, 90, 1);
+    const rightOneBefore = createPlacedTile(asTileId("right-1"), { x: 84, y: 0 }, 90, 2);
+    const rightTwoBefore = createPlacedTile(asTileId("right-2"), { x: 168, y: 0 }, 90, 3);
+    const downOne = createPlacedTile(asTileId("down-1"), { x: 0, y: 84 }, 0, 4);
 
     const beforeOrder = computeBoardTileStackOrder([
       root,
@@ -88,8 +91,8 @@ describe("board-depth", () => {
       downOne,
     ]).map((entry) => entry.tileId);
 
-    const rightOneAfter = createPlacedTile("right-1", { x: 84, y: 0 }, 90, 2);
-    const rightTwoAfter = createPlacedTile("right-2", { x: 84, y: 84 }, 0, 3);
+    const rightOneAfter = createPlacedTile(asTileId("right-1"), { x: 84, y: 0 }, 90, 2);
+    const rightTwoAfter = createPlacedTile(asTileId("right-2"), { x: 84, y: 84 }, 0, 3);
     const afterOrder = computeBoardTileStackOrder([
       root,
       rightOneAfter,
@@ -97,11 +100,11 @@ describe("board-depth", () => {
       downOne,
     ]).map((entry) => entry.tileId);
 
-    expect(beforeOrder.indexOf("right-2")).toBeLessThan(
-      beforeOrder.indexOf("down-1"),
+    expect(beforeOrder.indexOf(asTileId("right-2"))).toBeLessThan(
+      beforeOrder.indexOf(asTileId("down-1")),
     );
-    expect(afterOrder.indexOf("right-2")).toBeGreaterThan(
-      afterOrder.indexOf("down-1"),
+    expect(afterOrder.indexOf(asTileId("right-2"))).toBeGreaterThan(
+      afterOrder.indexOf(asTileId("down-1")),
     );
   });
 });

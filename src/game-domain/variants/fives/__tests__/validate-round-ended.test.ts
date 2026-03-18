@@ -27,11 +27,12 @@ describe("validateFivesRoundEndedEvent", () => {
   it("rejects a blocked-round event with a mismatched score award", () => {
     const state = reconstructGameState(BLOCKED_ROUND_EVENT_LOG.slice(0, 6));
     const game = state.game;
+    const blockedRoundEndedEvent = BLOCKED_ROUND_EVENT_LOG[6] as RoundEndedEvent;
     const event = {
-      ...BLOCKED_ROUND_EVENT_LOG[6],
+      ...blockedRoundEndedEvent,
       scoreAwarded: 5,
       scoreByPlayerId: {
-        ...BLOCKED_ROUND_EVENT_LOG[6].scoreByPlayerId,
+        ...blockedRoundEndedEvent.scoreByPlayerId,
         "player-fixture-001": 5,
       },
     } as RoundEndedEvent;

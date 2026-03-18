@@ -345,6 +345,7 @@ describe("Reconstruction Pipeline", () => {
       type: "GAME_ENDED",
       version: 1,
       occurredAt: new Date().toISOString(),
+      roundId: "r1" as RoundId,
       winnerPlayerId: p1,
       reason: "target_score_reached",
       finalScoreByPlayerId: {
