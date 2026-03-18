@@ -14,6 +14,7 @@ import {
   DominoTileHighlightShell,
 } from "@/components/domino/domino-tile";
 import { DominoOrientation } from "@/components/domino/domino-tile.types";
+import { resolveOpenSlotZIndex } from "@/components/game/board-area-layering";
 import {
   BoardLayoutTransitionPlan,
   buildBoardLayoutTransitionPlan,
@@ -28,7 +29,7 @@ import {
   PlacedTileGeometry,
   Point,
 } from "@/src/game-domain/layout/types";
-import { BoardState } from "@/src/game-domain/types";
+import { BoardState, TileId } from "@/src/game-domain/types";
 import { domino, spacing } from "@/theme/tokens";
 
 const BOARD_LAYOUT_TRANSITION_DURATION_MS = 320;
@@ -51,6 +52,7 @@ interface BoardAreaProps {
   layout: BoardLayoutSolution;
   highlightedAnchor?: LayoutAnchor | null;
   highlightedTileIsDouble?: boolean;
+  previewAnchor?: LayoutAnchor | null;
   previewTile?: PlacedTileGeometry | null;
   onTransitionActiveChange?: (isActive: boolean) => void;
 }
@@ -60,6 +62,7 @@ export const BoardArea: React.FC<BoardAreaProps> = ({
   layout,
   highlightedAnchor,
   highlightedTileIsDouble = false,
+  previewAnchor,
   previewTile,
   onTransitionActiveChange,
 }) => {
@@ -92,6 +95,13 @@ export const BoardArea: React.FC<BoardAreaProps> = ({
       zIndex: stackEntry.zIndex,
     }));
   }, [tilePlans]);
+  const tileZIndexById = useMemo(
+    () =>
+      new Map<TileId, number>(
+        stackedTilePlans.map(({ plan, zIndex }) => [plan.tileId, zIndex] as const),
+      ),
+    [stackedTilePlans],
+  );
   const cameraFrom = activeTransition?.plan.cameraFrom ?? layout.camera;
   const cameraTo = activeTransition?.plan.cameraTo ?? layout.camera;
   const visibleAnchors = useMemo(
@@ -120,6 +130,26 @@ export const BoardArea: React.FC<BoardAreaProps> = ({
           )
         : null,
     [highlightedAnchor, highlightedOpenSlot, highlightedTileIsDouble],
+  );
+  const highlightedOpenSlotZIndex = useMemo(
+    () =>
+      resolveOpenSlotZIndex(
+        highlightedAnchor,
+        highlightedOpenSlot?.visualDirection,
+        tileZIndexById,
+        SNAP_HIGHLIGHT_Z_INDEX,
+      ),
+    [highlightedAnchor, highlightedOpenSlot?.visualDirection, tileZIndexById],
+  );
+  const previewTileZIndex = useMemo(
+    () =>
+      resolveOpenSlotZIndex(
+        previewAnchor,
+        previewAnchor?.visualDirection ?? previewAnchor?.direction,
+        tileZIndexById,
+        PREVIEW_TILE_Z_INDEX,
+      ),
+    [previewAnchor, tileZIndexById],
   );
   const worldStyle = useAnimatedStyle(() => ({
     transform: [
@@ -230,6 +260,7 @@ export const BoardArea: React.FC<BoardAreaProps> = ({
                 {
                   left: previewTile.center.x - previewTile.width / 2,
                   top: previewTile.center.y - previewTile.height / 2,
+                  zIndex: previewTileZIndex,
                 },
               ]}
             >
@@ -251,6 +282,7 @@ export const BoardArea: React.FC<BoardAreaProps> = ({
                 {
                   left: highlightedOpenSlot.rect.x,
                   top: highlightedOpenSlot.rect.y,
+                  zIndex: highlightedOpenSlotZIndex,
                 },
               ]}
             >
@@ -467,7 +499,6 @@ const styles = StyleSheet.create((theme) => ({
   },
   previewTileWrapper: {
     position: "absolute",
-    zIndex: PREVIEW_TILE_Z_INDEX,
   },
   anchor: {
     position: "absolute",
@@ -480,6 +511,5 @@ const styles = StyleSheet.create((theme) => ({
   },
   snapHighlightWrapper: {
     position: "absolute",
-    zIndex: SNAP_HIGHLIGHT_Z_INDEX,
   },
 }));

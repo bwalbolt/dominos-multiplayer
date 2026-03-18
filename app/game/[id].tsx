@@ -947,6 +947,7 @@ function GameView({
               hasClearedHandThreshold ? dropTargetAnchor : null
             }
             highlightedTileIsDouble={highlightedTileIsDouble}
+            previewAnchor={snapAnchor}
             previewTile={snapAnchor ? previewGeometry : null}
             onTransitionActiveChange={setIsBoardTransitionActive}
           />
