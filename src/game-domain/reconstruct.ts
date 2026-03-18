@@ -12,6 +12,7 @@ import type {
 import type {
   BoardState,
   BoneyardState,
+  ChainSide,
   GameParticipants,
   GameState,
   PlayerHandState,
@@ -30,6 +31,7 @@ import type {
 import {
   calculateFivesBoardScore,
   calculateHandPipTotal,
+  evaluateRoundResolution,
   evaluateFivesLegalMoves,
   validateFivesRoundEndedEvent,
 } from "./variants/fives";
@@ -393,14 +395,20 @@ const applyTilePlayedEvent = (
     event.side === "left"
       ? [playedTile, ...currentRound.board.tiles]
       : [...currentRound.board.tiles, playedTile];
+
+  const isFirstDouble =
+    currentRound.board.spinnerTileId === null &&
+    tileInstance.tile.sideA === tileInstance.tile.sideB;
+
+  const nextSpinnerTileId = isFirstDouble
+    ? tileInstance.tile.id
+    : currentRound.board.spinnerTileId;
+
   const board =
     boardTiles.length === 1
       ? {
           ...currentRound.board,
-          spinnerTileId:
-            tileInstance.tile.sideA === tileInstance.tile.sideB
-              ? tileInstance.tile.id
-              : null,
+          spinnerTileId: nextSpinnerTileId,
           openEnds: getInitialOpenEndsForTile(
             tileInstance.tile,
             event.side,
@@ -410,11 +418,30 @@ const applyTilePlayedEvent = (
         }
       : {
           ...currentRound.board,
-          openEnds: upsertOpenEnd(currentRound.board.openEnds, {
-            side: event.side,
-            pip: event.openPipFacingOutward,
-            tileId: tileInstance.tile.id,
-          }),
+          spinnerTileId: nextSpinnerTileId,
+          openEnds: isFirstDouble
+            ? [
+                ...upsertOpenEnd(currentRound.board.openEnds, {
+                  side: event.side,
+                  pip: event.openPipFacingOutward,
+                  tileId: tileInstance.tile.id,
+                }),
+                {
+                  side: "up" as ChainSide,
+                  pip: tileInstance.tile.sideA,
+                  tileId: tileInstance.tile.id,
+                },
+                {
+                  side: "down" as ChainSide,
+                  pip: tileInstance.tile.sideA,
+                  tileId: tileInstance.tile.id,
+                },
+              ]
+            : upsertOpenEnd(currentRound.board.openEnds, {
+                side: event.side,
+                pip: event.openPipFacingOutward,
+                tileId: tileInstance.tile.id,
+              }),
           tiles: boardTiles,
         };
   const boardOrder = getBoardOrder(currentRound.board, event.side);
@@ -623,8 +650,42 @@ const applyRoundEndedEvent = (
   };
 };
 
+const finalizeRoundAtGameEnd = (
+  game: GameState,
+  tileCatalog: Record<TileId, Tile>,
+  event: GameEndedEvent,
+): RoundState | null => {
+  if (game.currentRound === null) {
+    return null;
+  }
+
+  assertRoundMatchesEvent(game.currentRound, event);
+
+  if (game.currentRound.endedAt !== null) {
+    return game.currentRound;
+  }
+
+  const result =
+    game.currentRound.result ??
+    (game.metadata.variant === "fives"
+      ? evaluateRoundResolution(game.currentRound, tileCatalog)
+      : null) ?? {
+      winnerPlayerId: event.winnerPlayerId,
+      reason: null,
+      scoreAwarded: 0,
+    };
+
+  return {
+    ...game.currentRound,
+    status: "completed",
+    result,
+    endedAt: event.occurredAt,
+  };
+};
+
 const applyGameEndedEvent = (
   game: GameState,
+  tileCatalog: Record<TileId, Tile>,
   event: GameEndedEvent,
 ): GameState => {
   const nextPlayerStateById: Record<PlayerId, PlayerMatchState> = {
@@ -648,6 +709,7 @@ const applyGameEndedEvent = (
     ...game,
     status: "completed",
     playerStateById: nextPlayerStateById,
+    currentRound: finalizeRoundAtGameEnd(game, tileCatalog, event),
     winnerPlayerId: event.winnerPlayerId,
     turn: null,
   };
@@ -758,7 +820,8 @@ const enrichDerivedState = (
     board: game.currentRound.board,
     handTileIds: activeHand.tileIds,
     tileCatalog,
-    isOpeningMove: game.currentRound.board.tiles.length === 0,
+    requiresOpeningDouble:
+      game.currentRound.roundNumber === 1 && game.currentRound.board.tiles.length === 0,
   });
 
   const playableTileIds = new Set(legalMoves.moves.map((m) => m.tileId));
@@ -890,7 +953,11 @@ const applyGameEventInternal = (
       );
       break;
     case "GAME_ENDED":
-      nextGame = applyGameEndedEvent(initializedGame, event);
+      nextGame = applyGameEndedEvent(
+        initializedGame,
+        accumulator.tileCatalog,
+        event,
+      );
       break;
     case "FORFEIT":
       nextGame = applyForfeitEvent(initializedGame, event);

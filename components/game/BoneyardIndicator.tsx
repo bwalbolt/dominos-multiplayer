@@ -43,7 +43,7 @@ const styles = StyleSheet.create((theme) => ({
   icon: {
     width: 16,
     height: 19,
-    marginRight: spacing[8],
+    marginRight: spacing[4],
   },
   content: {
     flexDirection: "column",

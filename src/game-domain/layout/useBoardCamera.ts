@@ -1,21 +1,24 @@
 import { useState, useMemo, useRef } from "react";
 import { LayoutChangeEvent, View } from "react-native";
 import { BoardState } from "../types";
-import { calculateBoardGeometry } from "./anchors";
-import { computeBoardBounds, computeFitTransform } from "./viewport";
+import { solveBoardLayout } from "./anchors";
 import { Point, Size } from "./types";
+import { domino } from "../../../theme/tokens";
 
 export function useBoardCamera(board: BoardState) {
   const [viewportSize, setViewportSize] = useState<Size>({ width: 0, height: 0 });
   const [containerOffset, setContainerOffset] = useState<Point>({ x: 0, y: 0 });
   const viewRef = useRef<View>(null);
+  const padding = domino.width;
 
-  const geometry = useMemo(() => calculateBoardGeometry(board), [board]);
-  const boardBounds = useMemo(() => computeBoardBounds(geometry.placedTiles), [geometry.placedTiles]);
-
-  const transform = useMemo(() => {
-    return computeFitTransform(boardBounds, viewportSize, 40 /* padding */);
-  }, [boardBounds, viewportSize]);
+  const layout = useMemo(
+    () =>
+      solveBoardLayout(board, {
+        viewport: viewportSize,
+        padding,
+      }),
+    [board, padding, viewportSize],
+  );
 
   const onLayout = (event: LayoutChangeEvent) => {
     const { width, height } = event.nativeEvent.layout;
@@ -28,11 +31,11 @@ export function useBoardCamera(board: BoardState) {
   };
 
   return {
-    transform,
+    layout,
+    transform: layout.camera,
     onLayout,
-    geometry,
+    geometry: layout.geometry,
     viewRef,
     containerOffset,
   };
 }
-

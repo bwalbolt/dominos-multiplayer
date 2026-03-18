@@ -1,28 +1,23 @@
-import React, { useEffect } from "react";
+import React from "react";
 import { View } from "react-native";
-import Animated, {
-  Easing,
-  useAnimatedProps,
-  useSharedValue,
-  withRepeat,
-  withTiming,
-} from "react-native-reanimated";
 import Svg, { ClipPath, Defs, G, Line, Path, Rect } from "react-native-svg";
 import { defaultPipAdapter } from "../../src/game-domain/presentation/pip-adapter";
-import { colors, domino } from "../../theme/tokens";
+import { domino } from "../../theme/tokens";
 import { DominoTileProps } from "./domino-tile.types";
+import {
+  DominoSelectionOutline,
+  DOMINO_SELECTION_OUTLINE_PADDING,
+} from "./DominoSelectionOutline";
 import { FaceRenderer } from "./face-renderers";
 
-const AnimatedRect = Animated.createAnimatedComponent(Rect);
-
-export const DominoTile: React.FC<DominoTileProps> = ({
+export const DominoTile = React.memo(function DominoTile({
   value1,
   value2,
   orientation = "up",
   faceStyle = "pips",
   scale = 1,
   state = "idle",
-}) => {
+}: DominoTileProps) {
   const isVertical = orientation === "up" || orientation === "down";
   const width = isVertical ? domino.width : domino.height;
   const height = isVertical ? domino.height : domino.width;
@@ -31,38 +26,9 @@ export const DominoTile: React.FC<DominoTileProps> = ({
   const glyph1 = defaultPipAdapter.getFaceGlyph(value1, faceStyle);
   const glyph2 = defaultPipAdapter.getFaceGlyph(value2, faceStyle);
 
-  // Animation values for selected state
-  const glowOffset = useSharedValue(0);
-
   const isGhost = state === "ghost";
   const isSelected = state === "selected";
   const opacity = isGhost ? 0.5 : 1;
-
-  useEffect(() => {
-    if (isSelected) {
-      glowOffset.value = withRepeat(
-        withTiming(3, {
-          duration: 900,
-          easing: Easing.inOut(Easing.ease),
-        }),
-        -1,
-        true,
-      );
-    } else {
-      glowOffset.value = 0;
-    }
-  }, [isSelected, glowOffset]);
-
-  const animatedGlowProps = useAnimatedProps(() => ({
-    x: -glowOffset.value,
-    y: -glowOffset.value,
-    width: width + glowOffset.value * 2,
-    height: height + glowOffset.value * 2,
-    strokeWidth: 1.5 + glowOffset.value * 0.5,
-    rx: domino.borderRadius + glowOffset.value,
-    ry: domino.borderRadius + glowOffset.value,
-    opacity: 1,
-  }));
 
   // Calculate face positions based on orientation
   const face1 = { x: 0, y: 0 };
@@ -100,7 +66,7 @@ export const DominoTile: React.FC<DominoTileProps> = ({
   const strokeWidth = 1;
 
   // Account for glow padding (max 3px + shadow space)
-  const padding = 6;
+  const padding = DOMINO_SELECTION_OUTLINE_PADDING;
   const offset = strokeWidth / 2 + padding;
 
   const svgWidth = width + strokeWidth + padding * 2;
@@ -208,13 +174,13 @@ export const DominoTile: React.FC<DominoTileProps> = ({
 
         {/* Selected Overlay (Glow in front) */}
         {isSelected && (
-          <AnimatedRect
-            animatedProps={animatedGlowProps}
-            fill="none"
-            stroke={colors.blue}
+          <DominoSelectionOutline
+            width={width}
+            height={height}
+            borderRadius={domino.borderRadius}
           />
         )}
       </Svg>
     </View>
   );
-};
+});

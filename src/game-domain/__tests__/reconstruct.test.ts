@@ -345,6 +345,7 @@ describe("Reconstruction Pipeline", () => {
       type: "GAME_ENDED",
       version: 1,
       occurredAt: new Date().toISOString(),
+      roundId: "r1" as RoundId,
       winnerPlayerId: p1,
       reason: "target_score_reached",
       finalScoreByPlayerId: {
@@ -368,8 +369,41 @@ describe("Reconstruction Pipeline", () => {
 
     expect(() =>
       reconstructGameState([gameStarted, roundStarted, gameEnded, lateDraw]),
-    ).toThrow("Cannot apply TILE_DRAWN because game game-1 is completed");
+    ).toThrow("Cannot apply TILE_DRAWN because round r1 is completed");
   });
+
+  it("should close an active round when GAME_ENDED arrives before ROUND_ENDED", () => {
+    const occurredAt = "2026-03-18T12:00:00.000Z";
+    const gameEnded: GameEndedEvent = {
+      eventId: "ev-3" as EventId,
+      gameId,
+      eventSeq: 3,
+      type: "GAME_ENDED",
+      version: 1,
+      occurredAt,
+      roundId: "r1" as RoundId,
+      winnerPlayerId: p1,
+      reason: "target_score_reached",
+      finalScoreByPlayerId: {
+        [p1]: 100,
+        [p2]: 20,
+      },
+    };
+
+    const state = reconstructGameState([gameStarted, roundStarted, gameEnded]);
+
+    expect(state.game?.status).toBe("completed");
+    expect(state.game?.turn).toBeNull();
+    expect(state.game?.playerStateById[p1].score).toBe(100);
+    expect(state.game?.currentRound?.status).toBe("completed");
+    expect(state.game?.currentRound?.result).toEqual({
+      winnerPlayerId: p1,
+      reason: null,
+      scoreAwarded: 0,
+    });
+    expect(state.game?.currentRound?.endedAt).toBe(occurredAt);
+  });
+
   it("should reject TILE_DRAWN when the tile is not currently in the boneyard", () => {
     const tileDrawn: TileDrawnEvent = {
       eventId: "ev-3" as EventId,

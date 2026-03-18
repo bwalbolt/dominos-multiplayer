@@ -1,12 +1,31 @@
 import { BoardArea } from "@/components/game/BoardArea";
 import { BoardHeader } from "@/components/game/BoardHeader";
 import { BoneyardIndicator } from "@/components/game/BoneyardIndicator";
+import { HandDragOverlay } from "@/components/game/HandDragOverlay";
+import { OpenEndsIndicator } from "@/components/game/OpenEndsIndicator";
 import { OpponentHand } from "@/components/game/OpponentHand";
 import { PlayerHand } from "@/components/game/PlayerHand";
+import {
+  createActiveHandDrag,
+  createPromotedActiveHandDrag,
+  createReturningHandDrag,
+  getHiddenHandTileIds,
+} from "@/components/game/hand-drag-state";
+import {
+  createSourceDragTileVisual,
+  resolveDraggedTileVisual,
+} from "@/components/game/hand-drag-visual";
+import {
+  ActiveHandDrag,
+  DragTileVisual,
+  HandTileDragStart,
+  PlacementTileAnimation,
+  ReturningHandDrag,
+  ScreenPoint,
+} from "@/components/game/hand-drag.types";
 import { getComputerAction } from "@/src/game-domain/computer-player";
 import {
   GameEvent,
-  GameEndedEvent,
   RoundEndedEvent,
   TileDrawnEvent,
   TilePlayedEvent,
@@ -22,18 +41,24 @@ import {
   ReconstructionState,
   TileId,
 } from "@/src/game-domain/types";
-import { evaluateFivesLegalMoves } from "@/src/game-domain/variants/fives";
 import {
-  checkGameWinner,
+  calculateFivesScoringTotal,
+  evaluateFivesLegalMoves,
+} from "@/src/game-domain/variants/fives";
+import {
+  createTargetScoreGameEndedEvent,
   evaluateRoundResolution,
 } from "@/src/game-domain/variants/fives/round-resolution";
 import { colors, spacing, typography } from "@/theme/tokens";
+import { useIsFocused } from "@react-navigation/native";
 import { Image } from "expo-image";
 import { useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 import { StyleSheet } from "react-native-unistyles";
+
+const DROP_SETTLE_PAUSE_MS = 100;
 
 export default function GameScreen() {
   const { id, opponentName } = useLocalSearchParams<{
@@ -101,6 +126,10 @@ function GameView({
   const playerState = game.playerStateById[player1Id];
   const opponentState = game.playerStateById[player2Id];
   const currentRound = game.currentRound!;
+  const isScreenFocused = useIsFocused();
+  const [isBoardTransitionActive, setIsBoardTransitionActive] = useState(false);
+  const [placementAnimation, setPlacementAnimation] =
+    useState<PlacementTileAnimation | null>(null);
 
   const { playerHandIds, playerHand } = useMemo(() => {
     const ids = currentRound.handsByPlayerId[player1Id]?.tileIds || [];
@@ -114,13 +143,21 @@ function GameView({
   const opponentHandCount =
     currentRound.handsByPlayerId[player2Id]?.handCount || 0;
   const boneyardCount = currentRound.boneyard.remainingCount;
+  const fivesScoringTotal = useMemo(() => {
+    return calculateFivesScoringTotal(currentRound.board);
+  }, [currentRound.board]);
   const isPlayerTurn = game.turn?.activePlayerId === player1Id;
+  const isBoardInteractionEnabled =
+    isPlayerTurn &&
+    isScreenFocused &&
+    !isBoardTransitionActive &&
+    placementAnimation === null;
 
   const opponentProfile = game.players.find(
     (p: any) => p.playerId === player2Id,
   );
 
-  const { transform, onLayout, geometry, viewRef, containerOffset } =
+  const { layout, transform, onLayout, geometry, viewRef, containerOffset } =
     useBoardCamera(currentRound.board);
 
   const legalMoves = useMemo(() => {
@@ -128,13 +165,17 @@ function GameView({
       board: currentRound.board,
       handTileIds: playerHandIds,
       tileCatalog,
-      isOpeningMove: currentRound.board.tiles.length === 0,
+      requiresOpeningDouble:
+        currentRound.roundNumber === 1 && currentRound.board.tiles.length === 0,
     }).moves;
   }, [currentRound, playerHandIds, tileCatalog]);
 
   const {
     draggedTileId,
-    activeSnap,
+    snapAnchor,
+    dropTargetAnchor,
+    hasClearedHandThreshold,
+    dragScreenPosition,
     previewGeometry,
     onDragStart,
     onDragUpdate,
@@ -145,7 +186,7 @@ function GameView({
     tileCatalog,
     transform,
     containerOffset,
-    isPlayerTurn,
+    isBoardInteractionEnabled,
   );
 
   const {
@@ -160,6 +201,100 @@ function GameView({
     () => new Set(legalMoves.map((m) => m.tileId)),
     [legalMoves],
   );
+  const scoreByPlayerId = useMemo(
+    () => ({
+      [player1Id]: game.playerStateById[player1Id].score,
+      [player2Id]: game.playerStateById[player2Id].score,
+    }),
+    [game.playerStateById, player1Id, player2Id],
+  );
+  const autoEndedScoreEventCountRef = useRef<number | null>(null);
+  const [activeHandDrag, setActiveHandDrag] = useState<ActiveHandDrag | null>(
+    null,
+  );
+  const [returningHandDrags, setReturningHandDrags] = useState<
+    ReturningHandDrag[]
+  >([]);
+  const activeHandDragRef = useRef<ActiveHandDrag | null>(null);
+  const returningHandDragsRef = useRef<ReturningHandDrag[]>([]);
+  const currentDragVisualRef = useRef<DragTileVisual | null>(null);
+  const nextReturnIdRef = useRef(0);
+  const nextPlacementIdRef = useRef(0);
+  const pendingPlacementEventRef = useRef<TilePlayedEvent | null>(null);
+  const placementPauseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const currentDragVisual = useMemo(() => {
+    if (!activeHandDrag) {
+      return null;
+    }
+
+    return resolveDraggedTileVisual({
+      sourceRect: activeHandDrag.sourceRect,
+      dragScreenPosition,
+      fallbackVisual: activeHandDrag.initialVisual,
+      previewGeometry,
+      cameraTransform: transform,
+      containerOffset,
+      isSnapped: snapAnchor !== null,
+    });
+  }, [
+    activeHandDrag,
+    snapAnchor,
+    containerOffset,
+    dragScreenPosition,
+    previewGeometry,
+    transform,
+  ]);
+  const hiddenTileIds = useMemo(
+    () =>
+      new Set([
+        ...getHiddenHandTileIds(activeHandDrag, returningHandDrags),
+        ...(placementAnimation ? [placementAnimation.tileId] : []),
+      ]),
+    [activeHandDrag, placementAnimation, returningHandDrags],
+  );
+  const highlightedTileIsDouble = useMemo(() => {
+    if (draggedTileId === null) {
+      return false;
+    }
+
+    const draggedTile = tileCatalog[draggedTileId];
+    return draggedTile ? draggedTile.sideA === draggedTile.sideB : false;
+  }, [draggedTileId, tileCatalog]);
+  const usesVerticalDragActivation = playerHand.length >= 8;
+
+  activeHandDragRef.current = activeHandDrag;
+  returningHandDragsRef.current = [...returningHandDrags];
+  currentDragVisualRef.current = currentDragVisual;
+
+  useEffect(() => {
+    if (isScreenFocused) {
+      return;
+    }
+
+    activeHandDragRef.current = null;
+    returningHandDragsRef.current = [];
+    currentDragVisualRef.current = null;
+    pendingPlacementEventRef.current = null;
+    if (placementPauseTimeoutRef.current) {
+      clearTimeout(placementPauseTimeoutRef.current);
+      placementPauseTimeoutRef.current = null;
+    }
+    setActiveHandDrag(null);
+    setPlacementAnimation(null);
+    setReturningHandDrags([]);
+  }, [isScreenFocused]);
+
+  const createNextReturnId = useCallback(() => {
+    nextReturnIdRef.current += 1;
+    return `return-${nextReturnIdRef.current}`;
+  }, []);
+
+  const createNextPlacementId = useCallback(() => {
+    nextPlacementIdRef.current += 1;
+    return `placement-${nextPlacementIdRef.current}`;
+  }, []);
 
   const handleDraw = useCallback(() => {
     if (!currentRound) return;
@@ -196,11 +331,80 @@ function GameView({
     }
   }, [currentRound, game.gameId, events.length, player1Id, appendEvent]);
 
-  const handleDragEnd = useCallback(() => {
-    const move = onDragEnd();
-    if (!isPlayerTurn || !move || !currentRound) {
+  const handleHandDragStart = useCallback(
+    (dragStart: HandTileDragStart) => {
+      const tile = tileCatalog[dragStart.tileId];
+
+      if (!tile || activeHandDragRef.current) {
+        return;
+      }
+
+      const nextActiveDrag = createActiveHandDrag({
+        tileId: dragStart.tileId,
+        value1: tile.sideA,
+        value2: tile.sideB,
+        sourceRect: dragStart.sourceRect,
+        initialVisual: createSourceDragTileVisual(dragStart.sourceRect),
+      });
+
+      activeHandDragRef.current = nextActiveDrag;
+      currentDragVisualRef.current = nextActiveDrag.initialVisual;
+      setActiveHandDrag(nextActiveDrag);
+      onDragStart(dragStart.tileId, dragStart.sourceRect);
+    },
+    [onDragStart, tileCatalog],
+  );
+
+  const finalizeActiveDrag = useCallback(() => {
+    const drag = activeHandDragRef.current;
+    const dragVisual = currentDragVisualRef.current;
+    const initialFromVisual =
+      dragVisual ??
+      drag?.initialVisual ??
+      (drag ? createSourceDragTileVisual(drag.sourceRect) : null);
+    const endResult = onDragEnd();
+    const move = endResult?.move ?? null;
+    const targetVisual =
+      drag && endResult?.targetPreviewGeometry
+        ? resolveDraggedTileVisual({
+            sourceRect: drag.sourceRect,
+            dragScreenPosition: null,
+            fallbackVisual: null,
+            previewGeometry: endResult.targetPreviewGeometry,
+            cameraTransform: transform,
+            containerOffset,
+            isSnapped: true,
+          })
+        : null;
+    const fromVisual =
+      endResult?.wasSnapped && targetVisual ? targetVisual : initialFromVisual;
+    if (!drag) {
       return;
     }
+
+    if (!isPlayerTurn || !move || !currentRound) {
+      setReturningHandDrags((current) => {
+        const next = [
+          ...current,
+          createReturningHandDrag({
+            returnId: createNextReturnId(),
+            activeDrag: drag,
+            returnFrom:
+              fromVisual ?? createSourceDragTileVisual(drag.sourceRect),
+          }),
+        ];
+        returningHandDragsRef.current = next;
+        return next;
+      });
+      activeHandDragRef.current = null;
+      currentDragVisualRef.current = null;
+      setActiveHandDrag(null);
+      return;
+    }
+
+    activeHandDragRef.current = null;
+    currentDragVisualRef.current = null;
+    setActiveHandDrag(null);
 
     const event: TilePlayedEvent = {
       eventId: Math.random().toString(36).substring(7) as EventId,
@@ -215,16 +419,136 @@ function GameView({
       side: move.side,
       openPipFacingOutward: move.openPipFacingOutward,
     };
+
+    if (fromVisual && targetVisual) {
+      pendingPlacementEventRef.current = event;
+      setPlacementAnimation({
+        animationId: createNextPlacementId(),
+        tileId: drag.tileId,
+        value1: drag.value1,
+        value2: drag.value2,
+        from: fromVisual,
+        to: targetVisual,
+      });
+      return;
+    }
+
     appendEvent(event);
   }, [
-    onDragEnd,
-    currentRound,
-    game.gameId,
-    events.length,
-    isPlayerTurn,
-    player1Id,
     appendEvent,
+    containerOffset,
+    currentRound,
+    createNextReturnId,
+    createNextPlacementId,
+    events.length,
+    game.gameId,
+    isPlayerTurn,
+    onDragEnd,
+    player1Id,
+    transform,
   ]);
+
+  const handleDragEnd = useCallback(() => {
+    finalizeActiveDrag();
+  }, [finalizeActiveDrag]);
+
+  const handleReturnAnimationComplete = useCallback((returnId: string) => {
+    setReturningHandDrags((current) => {
+      const next = current.filter(
+        (returningDrag) => returningDrag.returnId !== returnId,
+      );
+      returningHandDragsRef.current = next;
+      return next;
+    });
+  }, []);
+
+  const handlePlacementAnimationComplete = useCallback(
+    (animationId: string) => {
+      if (placementPauseTimeoutRef.current) {
+        clearTimeout(placementPauseTimeoutRef.current);
+        placementPauseTimeoutRef.current = null;
+      }
+
+      placementPauseTimeoutRef.current = setTimeout(() => {
+        setPlacementAnimation((current) => {
+          if (!current || current.animationId !== animationId) {
+            return current;
+          }
+
+          return null;
+        });
+
+        const event = pendingPlacementEventRef.current;
+        pendingPlacementEventRef.current = null;
+        placementPauseTimeoutRef.current = null;
+
+        if (event) {
+          appendEvent(event);
+        }
+      }, DROP_SETTLE_PAUSE_MS);
+    },
+    [appendEvent],
+  );
+
+  const handleReturningDragStart = useCallback(
+    (
+      returnId: string,
+      currentVisual: DragTileVisual,
+      touchPoint: ScreenPoint,
+    ) => {
+      if (activeHandDragRef.current) {
+        return;
+      }
+
+      const returningDrag = returningHandDragsRef.current.find(
+        (candidate) => candidate.returnId === returnId,
+      );
+      if (!returningDrag) {
+        return;
+      }
+
+      setReturningHandDrags((current) => {
+        const next = current.map((candidate) =>
+          candidate.returnId === returnId
+            ? { ...candidate, isPromotedToActive: true }
+            : candidate,
+        );
+        returningHandDragsRef.current = next;
+        return next;
+      });
+      const promotedDrag = createPromotedActiveHandDrag(
+        returningDrag,
+        currentVisual,
+      );
+      activeHandDragRef.current = promotedDrag;
+      currentDragVisualRef.current = currentVisual;
+      setActiveHandDrag(promotedDrag);
+      onDragStart(returningDrag.tileId, returningDrag.sourceRect);
+      onDragUpdate(touchPoint.x, touchPoint.y);
+    },
+    [onDragStart, onDragUpdate],
+  );
+
+  const handleReturningDragUpdate = useCallback(
+    (_returnId: string, screenX: number, screenY: number) => {
+      onDragUpdate(screenX, screenY);
+    },
+    [onDragUpdate],
+  );
+
+  const handleReturningDragEnd = useCallback(
+    (returnId: string) => {
+      setReturningHandDrags((current) => {
+        const next = current.filter(
+          (returningDrag) => returningDrag.returnId !== returnId,
+        );
+        returningHandDragsRef.current = next;
+        return next;
+      });
+      finalizeActiveDrag();
+    },
+    [finalizeActiveDrag],
+  );
 
   const [showDevTools, setShowDevTools] = useState(false);
 
@@ -232,6 +556,49 @@ function GameView({
     if (!currentRound || currentRound.status !== "active") return null;
     return evaluateRoundResolution(currentRound, tileCatalog);
   }, [currentRound, tileCatalog]);
+
+  useEffect(() => {
+    if (
+      game.status !== "active" ||
+      currentRound.status !== "active" ||
+      resolution !== null
+    ) {
+      autoEndedScoreEventCountRef.current = null;
+      return;
+    }
+
+    const gameEnded = createTargetScoreGameEndedEvent({
+      eventId: Math.random().toString(36).substring(7) as EventId,
+      gameId: game.gameId,
+      eventSeq: events.length + 1,
+      occurredAt: new Date().toISOString(),
+      roundId: currentRound.roundId,
+      playerScores: scoreByPlayerId,
+      targetScore: game.metadata.targetScore,
+    });
+
+    if (gameEnded === null) {
+      autoEndedScoreEventCountRef.current = null;
+      return;
+    }
+
+    if (autoEndedScoreEventCountRef.current === events.length) {
+      return;
+    }
+
+    autoEndedScoreEventCountRef.current = events.length;
+    appendEvent(gameEnded);
+  }, [
+    appendEvent,
+    currentRound.roundId,
+    currentRound.status,
+    events.length,
+    game.gameId,
+    game.metadata.targetScore,
+    game.status,
+    resolution,
+    scoreByPlayerId,
+  ]);
 
   // Automated Computer Turn
   useEffect(() => {
@@ -346,21 +713,17 @@ function GameView({
         game.playerStateById[player2Id].score +
         (resolution.winnerPlayerId === player2Id ? resolution.scoreAwarded : 0),
     };
-    const gameWinner = checkGameWinner(nextScores, game.metadata.targetScore);
+    const gameEnded = createTargetScoreGameEndedEvent({
+      eventId: Math.random().toString(36).substring(7) as EventId,
+      gameId: game.gameId,
+      eventSeq: events.length + 2,
+      occurredAt: new Date().toISOString(),
+      roundId: currentRound.roundId,
+      playerScores: nextScores,
+      targetScore: game.metadata.targetScore,
+    });
 
-    if (gameWinner) {
-      const gameEnded: GameEndedEvent = {
-        eventId: Math.random().toString(36).substring(7) as EventId,
-        gameId: game.gameId,
-        eventSeq: events.length + 2,
-        type: "GAME_ENDED",
-        version: 1,
-        occurredAt: new Date().toISOString(),
-        roundId: currentRound.roundId,
-        winnerPlayerId: gameWinner,
-        reason: "target_score_reached",
-        finalScoreByPlayerId: nextScores,
-      };
+    if (gameEnded) {
       appendEvents([roundEnded, gameEnded]);
     } else {
       // 3. Append ROUND_STARTED for next round
@@ -433,11 +796,16 @@ function GameView({
         doubleFive,
         "tile-0-0" as TileId,
         "tile-1-1" as TileId,
+        "tile-2-2" as TileId,
+        "tile-3-3" as TileId,
+        "tile-4-4" as TileId,
+        "tile-6-6" as TileId,
+        "tile-0-1" as TileId,
       ],
       forcePlayer2Hand: [
         doubleFour,
-        "tile-2-2" as TileId,
-        "tile-3-3" as TileId,
+        "tile-2-3" as TileId,
+        "tile-3-4" as TileId,
       ],
     });
     newEvents.push(nextRoundStarted);
@@ -481,31 +849,42 @@ function GameView({
       />
 
       <View style={styles.content}>
-        <OpponentHand count={opponentHandCount} isTurn={game.turn?.activePlayerId === player2Id} />
+        <OpponentHand
+          count={opponentHandCount}
+          isTurn={game.turn?.activePlayerId === player2Id}
+        />
 
         <View style={styles.boneyardWrapper}>
+          <OpenEndsIndicator scoringTotal={fivesScoringTotal} />
           <BoneyardIndicator count={boneyardCount} />
         </View>
 
         <View ref={viewRef} style={styles.boardContainer} onLayout={onLayout}>
           <BoardArea
             board={currentRound.board}
-            transform={transform}
-            previewGeometry={previewGeometry}
-            activeSnap={activeSnap}
+            layout={layout}
+            highlightedAnchor={
+              hasClearedHandThreshold ? dropTargetAnchor : null
+            }
+            highlightedTileIsDouble={highlightedTileIsDouble}
+            previewTile={snapAnchor ? previewGeometry : null}
+            onTransitionActiveChange={setIsBoardTransitionActive}
           />
         </View>
 
         {/* Draw button when stuck */}
-        {isPlayerTurn && playableTileIds.size === 0 && !draggedTileId && (
-          <View style={styles.drawButtonContainer}>
-            <Pressable style={styles.drawButton} onPress={handleDraw}>
-              <Text style={styles.drawButtonText}>
-                {boneyardCount > 0 ? "Draw Tile" : "Pass Turn"}
-              </Text>
-            </Pressable>
-          </View>
-        )}
+        {isPlayerTurn &&
+          playableTileIds.size === 0 &&
+          !activeHandDrag &&
+          !placementAnimation && (
+            <View style={styles.drawButtonContainer}>
+              <Pressable style={styles.drawButton} onPress={handleDraw}>
+                <Text style={styles.drawButtonText}>
+                  {boneyardCount > 0 ? "Draw Tile" : "Pass Turn"}
+                </Text>
+              </Pressable>
+            </View>
+          )}
 
         {/* Gradients behind player hand */}
         <View style={styles.gradientContainer} pointerEvents="none">
@@ -563,12 +942,34 @@ function GameView({
           <PlayerHand
             hand={playerHand}
             playableTileIds={playableTileIds}
-            isInteractionEnabled={isPlayerTurn}
-            onDragStart={onDragStart}
+            hiddenTileIds={hiddenTileIds}
+            hasActiveDrag={
+              activeHandDrag !== null || placementAnimation !== null
+            }
+            activeTileId={activeHandDrag?.tileId ?? null}
+            isInteractionEnabled={isBoardInteractionEnabled}
+            onDragStart={handleHandDragStart}
             onDragUpdate={onDragUpdate}
             onDragEnd={handleDragEnd}
           />
         </View>
+      </View>
+
+      <View pointerEvents="box-none" style={styles.dragOverlay}>
+        <HandDragOverlay
+          activeDrag={activeHandDrag}
+          activeDragVisual={currentDragVisual}
+          placementAnimation={placementAnimation}
+          returningDrags={returningHandDrags}
+          hideActiveDrag={snapAnchor !== null}
+          usesVerticalDragActivation={usesVerticalDragActivation}
+          hasActiveDrag={activeHandDrag !== null || placementAnimation !== null}
+          onPlacementAnimationComplete={handlePlacementAnimationComplete}
+          onReturnComplete={handleReturnAnimationComplete}
+          onReturningDragStart={handleReturningDragStart}
+          onReturningDragUpdate={handleReturningDragUpdate}
+          onReturningDragEnd={handleReturningDragEnd}
+        />
       </View>
 
       {showDevTools && (
@@ -685,11 +1086,15 @@ const styles = StyleSheet.create((theme) => ({
   handWrapper: {
     zIndex: 5,
   },
+  dragOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 25,
+  },
 
   boneyardWrapper: {
     position: "absolute",
     left: 0,
-    top: 40, // Below header
+    top: 32, // Below header
     zIndex: 10,
   },
   drawButtonContainer: {

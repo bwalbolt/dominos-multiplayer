@@ -18,6 +18,13 @@ export type ComputerAction =
 
 const getTilePipTotal = (tile: Tile): number => tile.sideA + tile.sideB;
 
+const getNextPlacedAtSeq = (board: BoardState): number =>
+  board.tiles.reduce(
+    (maxPlacedAtSeq, playedTile) =>
+      Math.max(maxPlacedAtSeq, playedTile.placedAtSeq),
+    0,
+  ) + 1;
+
 /**
  * PROJECTS a move on the board to calculate what the board will look like.
  */
@@ -30,7 +37,9 @@ const projectMoveOnBoard = (
   const playedTile = {
     tile,
     playedBy: playerId,
-    placedAtSeq: 0, // Placeholder
+    // Preserve later-spinner behavior during scoring by projecting the move
+    // with the same relative sequence ordering reconstruct() would assign.
+    placedAtSeq: getNextPlacedAtSeq(board),
     side: move.side,
     openPipFacingOutward: move.openPipFacingOutward,
   };
@@ -39,11 +48,14 @@ const projectMoveOnBoard = (
     move.side === "left"
       ? [playedTile, ...board.tiles]
       : [...board.tiles, playedTile];
+  const isFirstDouble =
+    board.spinnerTileId === null && tile.sideA === tile.sideB;
+  const nextSpinnerTileId = isFirstDouble ? tile.id : board.spinnerTileId;
 
   if (boardTiles.length === 1) {
     return {
       ...board,
-      spinnerTileId: tile.sideA === tile.sideB ? tile.id : null,
+      spinnerTileId: nextSpinnerTileId,
       openEnds: getInitialOpenEndsForTile(
         tile,
         move.side,
@@ -55,11 +67,30 @@ const projectMoveOnBoard = (
 
   return {
     ...board,
-    openEnds: upsertOpenEnd(board.openEnds, {
-      side: move.side,
-      pip: move.openPipFacingOutward,
-      tileId: tile.id,
-    }),
+    spinnerTileId: nextSpinnerTileId,
+    openEnds: isFirstDouble
+      ? [
+          ...upsertOpenEnd(board.openEnds, {
+            side: move.side,
+            pip: move.openPipFacingOutward,
+            tileId: tile.id,
+          }),
+          {
+            side: "up",
+            pip: tile.sideA,
+            tileId: tile.id,
+          },
+          {
+            side: "down",
+            pip: tile.sideA,
+            tileId: tile.id,
+          },
+        ]
+      : upsertOpenEnd(board.openEnds, {
+          side: move.side,
+          pip: move.openPipFacingOutward,
+          tileId: tile.id,
+        }),
     tiles: boardTiles,
   };
 };
@@ -101,7 +132,7 @@ export const getComputerAction = (
     board: round.board,
     handTileIds: hand.tileIds,
     tileCatalog,
-    isOpeningMove: round.board.tiles.length === 0,
+    requiresOpeningDouble: round.roundNumber === 1 && round.board.tiles.length === 0,
   });
 
   if (evaluation.moves.length > 0) {

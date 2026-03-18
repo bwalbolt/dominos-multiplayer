@@ -45,6 +45,12 @@ export type PlayedTile = Readonly<{
   openPipFacingOutward: DominoPip;
 }>;
 
+/**
+ * Structural board branches tracked for rendering and move generation.
+ * In Fives, this can include spinner-owned up/down branches once the cross is
+ * unlocked for play, even though those spinner faces do not contribute to the
+ * scoring total by themselves.
+ */
 export type BoardOpenEnd = Readonly<{
   side: ChainSide;
   pip: DominoPip;

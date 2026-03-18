@@ -7,6 +7,7 @@ import type {
   Tile,
   TileId,
 } from "../../types";
+import { getSpinnerBranchUnlocks } from "../../util/spinner";
 
 const CHAIN_SIDES: readonly ChainSide[] = ["left", "right", "up", "down"];
 
@@ -14,7 +15,7 @@ type EvaluateFivesLegalMovesInput = Readonly<{
   board: BoardState;
   handTileIds: readonly TileId[];
   tileCatalog: Readonly<Record<TileId, Tile>>;
-  isOpeningMove: boolean;
+  requiresOpeningDouble: boolean;
 }>;
 
 export type FivesLegalMoveEvaluation = Readonly<{
@@ -70,20 +71,13 @@ export const getFivesSpinnerBranchStatus = (
     };
   }
 
-  const nonSpinnerTiles = board.tiles.filter(
-    (playedTile) => playedTile.tile.id !== board.spinnerTileId,
-  );
-  const hasLeftArm = nonSpinnerTiles.some((playedTile) => playedTile.side === "left");
-  const hasRightArm = nonSpinnerTiles.some((playedTile) => playedTile.side === "right");
-  const spinnerCrossUnlocked = hasLeftArm && hasRightArm;
+  const { up, down } = getSpinnerBranchUnlocks(board);
 
   return {
     left: openEndsBySide.left === undefined ? "closed" : "open",
     right: openEndsBySide.right === undefined ? "closed" : "open",
-    up:
-      spinnerCrossUnlocked && openEndsBySide.up !== undefined ? "open" : "closed",
-    down:
-      spinnerCrossUnlocked && openEndsBySide.down !== undefined ? "open" : "closed",
+    up: up && openEndsBySide.up !== undefined ? "open" : "closed",
+    down: down && openEndsBySide.down !== undefined ? "open" : "closed",
   };
 };
 
@@ -116,6 +110,43 @@ const getMovesForOpeningTurn = (
       },
     ],
     requiredOpeningTileId: highestDouble.id,
+    spinnerBranches: createClosedBranchStatus(),
+  };
+};
+
+const getMovesForEmptyBoard = (
+  handTileIds: readonly TileId[],
+  tileCatalog: Readonly<Record<TileId, Tile>>,
+): FivesLegalMoveEvaluation => {
+  const moves: FivesLegalMove[] = [];
+
+  for (const tileId of handTileIds) {
+    const tile = tileCatalog[tileId];
+
+    if (!tile) {
+      continue;
+    }
+
+    moves.push({
+      tileId,
+      side: "left",
+      inwardTileSide: "sideA",
+      openPipFacingOutward: tile.sideB,
+    });
+
+    if (tile.sideA !== tile.sideB) {
+      moves.push({
+        tileId,
+        side: "left",
+        inwardTileSide: "sideB",
+        openPipFacingOutward: tile.sideA,
+      });
+    }
+  }
+
+  return {
+    moves,
+    requiredOpeningTileId: null,
     spinnerBranches: createClosedBranchStatus(),
   };
 };
@@ -174,8 +205,12 @@ const getMovesForBoardState = (
 export const evaluateFivesLegalMoves = (
   input: EvaluateFivesLegalMovesInput,
 ): FivesLegalMoveEvaluation => {
-  if (input.isOpeningMove || input.board.tiles.length === 0) {
+  if (input.requiresOpeningDouble) {
     return getMovesForOpeningTurn(input.handTileIds, input.tileCatalog);
+  }
+
+  if (input.board.tiles.length === 0) {
+    return getMovesForEmptyBoard(input.handTileIds, input.tileCatalog);
   }
 
   return getMovesForBoardState(input.board, input.handTileIds, input.tileCatalog);

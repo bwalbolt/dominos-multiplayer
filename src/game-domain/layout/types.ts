@@ -21,6 +21,8 @@ export type Size = {
  */
 export type LayoutOrientation = "up" | "right" | "down" | "left";
 
+export type RootKind = "line" | "spinner";
+
 /**
  * A potential slot where a tile can be played
  */
@@ -33,6 +35,8 @@ export type LayoutAnchor = {
   readonly attachmentPoint: Point;
   /** The direction in which the chain is growing from this anchor */
   readonly direction: ChainSide;
+  /** The rendered direction used for cosmetic wrapping. Defaults to the logical direction. */
+  readonly visualDirection?: LayoutOrientation;
   /** The pip value that must match for this anchor */
   readonly openPip: DominoPip;
 };
@@ -53,6 +57,12 @@ export type PlacedTileGeometry = {
   readonly width: number;
   /** Actual height of the tile bounding box in this rotation */
   readonly height: number;
+  /** Stable placement order from the event log. */
+  readonly placedAtSeq: number;
+  /** Logical chain branch this tile belongs to. */
+  readonly logicalSide: ChainSide;
+  /** Heading chosen by the layout solver for this tile. */
+  readonly heading: LayoutOrientation;
 };
 
 /**
@@ -61,6 +71,66 @@ export type PlacedTileGeometry = {
 export type BoardGeometry = {
   readonly placedTiles: readonly PlacedTileGeometry[];
   readonly anchors: readonly LayoutAnchor[];
+};
+
+export type TileSizeMetrics = {
+  readonly shortSide: number;
+  readonly longSide: number;
+};
+
+export type ArmSequenceEntry = {
+  readonly tileId: TileId;
+  readonly isDouble: boolean;
+};
+
+export type BoardLayoutOpenEnd = {
+  readonly side: ChainSide;
+  readonly ownerTileId: TileId | null;
+  readonly openPip: DominoPip;
+};
+
+export type BoardLayoutArm = {
+  readonly side: ChainSide;
+  readonly isOpen: boolean;
+  readonly tiles: readonly ArmSequenceEntry[];
+};
+
+export type LayoutOpenSlot = {
+  readonly side: ChainSide;
+  readonly attachmentPoint: Point;
+  readonly visualDirection: LayoutOrientation;
+  readonly rect: Rect;
+};
+
+export type BoardLayoutProblem = {
+  readonly viewport: Size | null;
+  readonly tileSize: TileSizeMetrics;
+  readonly rootKind: RootKind;
+  readonly rootTileId: TileId | null;
+  readonly openEnds: readonly BoardLayoutOpenEnd[];
+  readonly arms: readonly BoardLayoutArm[];
+};
+
+export type LayoutScore = {
+  readonly clarityViolation: number;
+  readonly fitScale: number;
+  readonly proximityPenalty: number;
+  readonly compactness: number;
+  readonly bendCount: number;
+  readonly rightTurnCount: number;
+  readonly leftTurnCount: number;
+};
+
+export type BoardLayoutSolution = {
+  readonly geometry: BoardGeometry;
+  readonly openSlots: readonly LayoutOpenSlot[];
+  readonly occupiedBounds: Rect;
+  readonly playableBounds: Rect;
+  readonly fitScale: number;
+  readonly camera: CameraTransform;
+  readonly bendPlan: Readonly<Record<ChainSide, readonly number[]>>;
+  readonly score: LayoutScore;
+  readonly problem: BoardLayoutProblem;
 };
 
 /**

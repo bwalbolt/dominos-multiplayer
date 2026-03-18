@@ -15,6 +15,9 @@ describe("viewport-focus", () => {
       rotationDeg: 0,
       width: 56,
       height: 112,
+      placedAtSeq: 1,
+      logicalSide: "left",
+      heading: "up",
     },
     {
       tileId: "tile-2" as TileId,
@@ -24,6 +27,9 @@ describe("viewport-focus", () => {
       rotationDeg: 90,
       width: 112,
       height: 56,
+      placedAtSeq: 2,
+      logicalSide: "right",
+      heading: "right",
     },
   ];
 

@@ -1,12 +1,13 @@
 import React from "react";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { 
-  useAnimatedStyle, 
-  useSharedValue,
   runOnJS,
-  withSpring,
+  useSharedValue,
 } from "react-native-reanimated";
+import { StyleSheet } from "react-native-unistyles";
+
 import { DominoTile } from "../domino/domino-tile";
+import { resolveHandPanIntent } from "./hand-pan-intent";
 import { TileId } from "@/src/game-domain/types";
 
 interface DraggableHandTileProps {
@@ -14,7 +15,9 @@ interface DraggableHandTileProps {
   value1: number;
   value2: number;
   isPlayable?: boolean;
+  isHidden: boolean;
   isInteractionEnabled: boolean;
+  usesVerticalDragActivation: boolean;
   onDragStart: (tileId: TileId) => void;
   onDragUpdate: (screenX: number, screenY: number) => void;
   onDragEnd: () => void;
@@ -25,57 +28,104 @@ export const DraggableHandTile: React.FC<DraggableHandTileProps> = ({
   value1,
   value2,
   isPlayable = false,
+  isHidden,
   isInteractionEnabled,
+  usesVerticalDragActivation,
   onDragStart,
   onDragUpdate,
   onDragEnd,
 }) => {
-
-  const translateX = useSharedValue(0);
-  const translateY = useSharedValue(0);
-  const isDragging = useSharedValue(false);
-
-  const startX = useSharedValue(0);
-  const startY = useSharedValue(0);
   const canDrag = isPlayable && isInteractionEnabled;
+  const hasActivated = useSharedValue(false);
+  const touchStartX = useSharedValue(0);
+  const touchStartY = useSharedValue(0);
+  const intentResolved = useSharedValue(false);
 
-  const panGesture = Gesture.Pan()
-    .enabled(canDrag)
+  const panGesture = Gesture.Pan().enabled(canDrag);
+
+  if (usesVerticalDragActivation) {
+    panGesture
+      .manualActivation(true)
+      .onTouchesDown((event) => {
+        "worklet";
+
+        const touch = event.changedTouches[0] ?? event.allTouches[0];
+        if (!touch) {
+          return;
+        }
+
+        touchStartX.value = touch.absoluteX;
+        touchStartY.value = touch.absoluteY;
+        intentResolved.value = false;
+      })
+      .onTouchesMove((event, stateManager) => {
+        "worklet";
+
+        if (intentResolved.value) {
+          return;
+        }
+
+        const touch = event.changedTouches[0] ?? event.allTouches[0];
+        if (!touch) {
+          return;
+        }
+
+        const intent = resolveHandPanIntent({
+          translationX: touch.absoluteX - touchStartX.value,
+          translationY: touch.absoluteY - touchStartY.value,
+        });
+
+        if (intent === "activate_drag") {
+          intentResolved.value = true;
+          stateManager.activate();
+        } else if (intent === "yield_to_scroll") {
+          intentResolved.value = true;
+          stateManager.fail();
+        }
+      })
+      .onTouchesUp((_event, stateManager) => {
+        "worklet";
+
+        if (intentResolved.value) {
+          return;
+        }
+
+        intentResolved.value = true;
+        stateManager.fail();
+      })
+      .onTouchesCancelled(() => {
+        "worklet";
+
+        intentResolved.value = true;
+      });
+  }
+
+  panGesture
     .onStart(() => {
-      isDragging.value = true;
-      startX.value = translateX.value;
-      startY.value = translateY.value;
+      "worklet";
+
+      hasActivated.value = true;
       runOnJS(onDragStart)(tileId);
     })
     .onUpdate((event) => {
-      translateX.value = startX.value + event.translationX;
-      translateY.value = startY.value + event.translationY;
+      "worklet";
+
       runOnJS(onDragUpdate)(event.absoluteX, event.absoluteY);
     })
-    .onEnd(() => {
-      isDragging.value = false;
-      translateX.value = withSpring(0);
-      translateY.value = withSpring(0);
-      runOnJS(onDragEnd)();
+    .onFinalize(() => {
+      "worklet";
+
+      if (hasActivated.value) {
+        hasActivated.value = false;
+        runOnJS(onDragEnd)();
+      }
+
+      intentResolved.value = false;
     });
-
-  const animatedStyle = useAnimatedStyle(() => {
-    return {
-      transform: [
-        { translateX: translateX.value },
-        { translateY: translateY.value },
-        { scale: isDragging.value ? 1.1 : 1 },
-      ],
-      zIndex: isDragging.value ? 100 : 1,
-      opacity: isDragging.value ? 0 : 1,
-    };
-  });
-
-
 
   return (
     <GestureDetector gesture={panGesture}>
-      <Animated.View style={animatedStyle}>
+      <Animated.View style={[styles.tile, isHidden && styles.hiddenTile]}>
         <DominoTile
           value1={value1 as any}
           value2={value2 as any}
@@ -86,3 +136,12 @@ export const DraggableHandTile: React.FC<DraggableHandTileProps> = ({
     </GestureDetector>
   );
 };
+
+const styles = StyleSheet.create(() => ({
+  tile: {
+    opacity: 1,
+  },
+  hiddenTile: {
+    opacity: 0,
+  },
+}));

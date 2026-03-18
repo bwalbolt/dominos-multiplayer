@@ -1,31 +1,18 @@
+import { getSpinnerBranchUnlocks as getSharedSpinnerBranchUnlocks } from "../util/spinner";
 import { BoardState, ChainSide, TileId } from "../types";
 
 /**
  * Determines which branches of a spinner are unlocked for playing.
- * In Fives, the up/down branches of the spinner are only available 
+ * In Fives, the up/down branches of the spinner are only available for play
  * after both ends of the main (left/right) axis have been played off.
+ * Those spinner-owned branches still do not contribute to the scoring total
+ * by themselves once the cross is unlocked.
  */
 export function getSpinnerBranchUnlocks(board: BoardState): {
   readonly up: boolean;
   readonly down: boolean;
 } {
-  const spinnerId = board.spinnerTileId;
-  if (!spinnerId) {
-    return { up: false, down: false };
-  }
-
-  // Find tiles played off the primary axis (left/right)
-  // Note: We check if ANY tile has been played in that direction.
-  // In our reconstruction, the first tile's side is 'right' or 'left' 
-  // depending on move intent, but usually it grows from center.
-  
-  const hasLeft = board.tiles.some(t => t.side === "left");
-  const hasRight = board.tiles.some(t => t.side === "right");
-
-  return {
-    up: hasLeft && hasRight,
-    down: hasLeft && hasRight,
-  };
+  return getSharedSpinnerBranchUnlocks(board);
 }
 
 /**

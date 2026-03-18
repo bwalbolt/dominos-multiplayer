@@ -1,6 +1,10 @@
+import type { GameEndedEvent } from "../../events/schema";
 import type {
+  EventId,
+  GameId,
   PlayerHandState,
   PlayerId,
+  RoundId,
   RoundResult,
   RoundState,
   Tile,
@@ -64,7 +68,7 @@ export const evaluateRoundResolution = (
         board: round.board,
         handTileIds: round.handsByPlayerId[playerId].tileIds,
         tileCatalog,
-        isOpeningMove: false, // If it's blocked, it's definitely not the opening move
+        requiresOpeningDouble: false,
       }),
     );
 
@@ -129,4 +133,41 @@ export const checkGameWinner = (
     }
   }
   return null;
+};
+
+export const createTargetScoreGameEndedEvent = ({
+  eventId,
+  gameId,
+  eventSeq,
+  occurredAt,
+  roundId,
+  playerScores,
+  targetScore = 100,
+}: {
+  eventId: EventId;
+  gameId: GameId;
+  eventSeq: number;
+  occurredAt: string;
+  roundId: RoundId;
+  playerScores: Readonly<Record<PlayerId, number>>;
+  targetScore?: number;
+}): GameEndedEvent | null => {
+  const winnerPlayerId = checkGameWinner(playerScores, targetScore);
+
+  if (winnerPlayerId === null) {
+    return null;
+  }
+
+  return {
+    eventId,
+    gameId,
+    eventSeq,
+    type: "GAME_ENDED",
+    version: 1,
+    occurredAt,
+    roundId,
+    winnerPlayerId,
+    reason: "target_score_reached",
+    finalScoreByPlayerId: playerScores,
+  };
 };

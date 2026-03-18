@@ -1,147 +1,1578 @@
 import { domino } from "../../../theme/tokens";
-import { BoardState, ChainSide, DominoPip, TileId } from "../types";
+import {
+  BoardState,
+  ChainSide,
+  DominoPip,
+  PlayedTile,
+  TileId,
+  TileSide,
+} from "../types";
 import { projectPlacement } from "./project-placement";
-import { getBranchRootId, getSpinnerBranchUnlocks } from "./spinner";
-import { BoardGeometry, LayoutAnchor, PlacedTileGeometry, Point } from "./types";
+import { getSpinnerBranchUnlocks } from "./spinner";
+import {
+  BoardGeometry,
+  BoardLayoutOpenEnd,
+  BoardLayoutProblem,
+  BoardLayoutSolution,
+  LayoutAnchor,
+  LayoutOpenSlot,
+  LayoutOrientation,
+  LayoutScore,
+  PlacedTileGeometry,
+  Point,
+  Rect,
+  RootKind,
+  Size,
+} from "./types";
+import { createOpenSlot } from "./open-slot";
+import { computeFitTransform } from "./viewport";
 
-const TILE_WIDTH = domino.width;  // 56
-const TILE_HEIGHT = domino.height; // 112
+const DEFAULT_PADDING = domino.width;
+const DEFAULT_VIEWPORT: Size = {
+  width: 402,
+  height: 560,
+};
+const SIDE_ORDER: readonly ChainSide[] = ["left", "right", "up", "down"];
+const TURN_LEFT: Readonly<Record<LayoutOrientation, LayoutOrientation>> = {
+  right: "up",
+  up: "left",
+  left: "down",
+  down: "right",
+};
+const TURN_RIGHT: Readonly<Record<LayoutOrientation, LayoutOrientation>> = {
+  right: "down",
+  down: "left",
+  left: "up",
+  up: "right",
+};
+const SCORE_EPSILON = 0.000001;
+const HARD_CLARITY_THRESHOLD = 16;
+const HARD_ENDPOINT_THRESHOLD = 20;
+const SOFT_PROXIMITY_THRESHOLD = 10;
+const CLARITY_LANE_OVERLAP = domino.width / 2;
 
-/**
- * Calculates the full geometric layout of the board based on the reconstructed state.
- */
-export function calculateBoardGeometry(board: BoardState): BoardGeometry {
+type CalculateBoardGeometryOptions = {
+  readonly viewport?: Size;
+  readonly padding?: number;
+};
+
+type RootCandidate = Readonly<{
+  rotationDeg: number;
+  startHeadings: Partial<Record<ChainSide, LayoutOrientation>>;
+}>;
+
+type ExtractedLayoutProblem = Readonly<{
+  problem: BoardLayoutProblem;
+  rootTile: PlayedTile;
+  armTilesBySide: Readonly<Record<ChainSide, readonly PlayedTile[]>>;
+  openEndsBySide: Readonly<Partial<Record<ChainSide, DominoPip>>>;
+  rootPipsBySide: Readonly<Partial<Record<ChainSide, DominoPip>>>;
+}>;
+
+type RuntimeArmState = Readonly<{
+  side: ChainSide;
+  isOpen: boolean;
+  tiles: readonly PlayedTile[];
+  startHeading: LayoutOrientation;
+  rootAttachmentPoint: Point;
+  openFaceCenter: Point | null;
+  currentHeading: LayoutOrientation;
+  placedCount: number;
+  bends: number;
+  leftTurns: number;
+  rightTurns: number;
+  runLengths: readonly number[];
+  currentRunLength: number;
+  lastTileId: TileId | null;
+}>;
+
+type SolverPlacedTile = PlacedTileGeometry & {
+  readonly placedAtSeq: number;
+  readonly logicalSide: ChainSide;
+  readonly heading: LayoutOrientation;
+};
+
+type SearchState = Readonly<{
+  placedTiles: readonly SolverPlacedTile[];
+  tileRects: readonly Rect[];
+  openSlots: readonly LayoutOpenSlot[];
+  arms: Readonly<Record<ChainSide, RuntimeArmState>>;
+}>;
+
+type GeometrySubject = Readonly<{
+  id: string;
+  kind: "tile" | "slot";
+  rect: Rect;
+  logicalSide: ChainSide;
+  tileId: TileId | null;
+  ownerTileId: TileId | null;
+  armIndex: number | null;
+  focusPoint: Point | null;
+}>;
+
+type ArmTilePosition = Readonly<{
+  side: ChainSide;
+  index: number;
+}>;
+
+export function calculateBoardGeometry(
+  board: BoardState,
+  options?: CalculateBoardGeometryOptions,
+): BoardGeometry {
+  return solveBoardLayout(board, options).geometry;
+}
+
+export function solveBoardLayout(
+  board: BoardState,
+  options?: CalculateBoardGeometryOptions,
+): BoardLayoutSolution {
   if (board.tiles.length === 0) {
-    return { 
-      placedTiles: [], 
-      anchors: computeLegalAnchors(board, new Map()) 
+    return buildEmptySolution(options?.viewport ?? null, options?.padding ?? DEFAULT_PADDING);
+  }
+
+  const extracted = extractProblem(board, options?.viewport ?? null);
+  const padding = options?.padding ?? DEFAULT_PADDING;
+  const viewport = normalizeViewport(extracted.problem.viewport);
+  const matchingRootCandidates =
+    extracted.problem.rootKind === "spinner"
+      ? buildRootCandidates(extracted.problem.rootKind)
+      : buildRootCandidates(extracted.problem.rootKind).filter((candidate) =>
+          isCompatibleLineRootCandidate(
+            extracted.rootTile,
+            extracted.rootPipsBySide,
+            candidate,
+          ),
+        );
+  const rootCandidates =
+    matchingRootCandidates.length > 0
+      ? matchingRootCandidates
+      : buildRootCandidates(extracted.problem.rootKind);
+  let best: BoardLayoutSolution | null = null;
+
+  for (const rootCandidate of rootCandidates) {
+    const initialState = createInitialState(extracted, rootCandidate);
+    const seeded = buildSeedSolutions(extracted, initialState, padding, viewport);
+
+    for (const solution of seeded) {
+      if (!best || isBetterScore(solution.score, best.score)) {
+        best = solution;
+      }
+    }
+
+    best = search(extracted, initialState, padding, viewport, best);
+  }
+
+  if (best) {
+    return best;
+  }
+
+  return buildFinalSolution(extracted, createInitialState(extracted, rootCandidates[0]), padding, viewport);
+}
+
+export function extractBoardLayoutProblem(
+  board: BoardState,
+  viewport: Size | null,
+): BoardLayoutProblem {
+  const extracted = extractProblem(board, viewport);
+  return extracted.problem;
+}
+
+function search(
+  extracted: ExtractedLayoutProblem,
+  state: SearchState,
+  padding: number,
+  viewport: Size | null,
+  best: BoardLayoutSolution | null,
+): BoardLayoutSolution | null {
+  const nextSide = selectNextSide(state.arms);
+
+  if (nextSide === null) {
+    const candidate = buildFinalSolution(extracted, state, padding, viewport);
+    return !best || isBetterScore(candidate.score, best.score) ? candidate : best;
+  }
+
+  let currentBest = best;
+  const candidateStates = buildCandidateStates(state, nextSide);
+
+  for (const candidateState of candidateStates) {
+    const optimistic = buildOptimisticStateScore(extracted, candidateState, padding, viewport);
+
+    if (currentBest && !canBeat(optimistic, currentBest.score)) {
+      continue;
+    }
+
+    currentBest = search(extracted, candidateState, padding, viewport, currentBest);
+  }
+
+  return currentBest;
+}
+
+function buildSeedSolutions(
+  extracted: ExtractedLayoutProblem,
+  initialState: SearchState,
+  padding: number,
+  viewport: Size | null,
+): readonly BoardLayoutSolution[] {
+  const solutions: BoardLayoutSolution[] = [];
+  const patterns = [
+    { segments: [Number.POSITIVE_INFINITY], turn: "left" as const },
+    { segments: [3, 3, 2], turn: "left" as const },
+    { segments: [3, 3, 2], turn: "right" as const },
+  ];
+
+  for (const pattern of patterns) {
+    const candidate = buildPatternSolution(extracted, initialState, pattern.segments, pattern.turn, padding, viewport);
+
+    if (candidate) {
+      solutions.push(candidate);
+    }
+  }
+
+  return solutions;
+}
+
+function buildPatternSolution(
+  extracted: ExtractedLayoutProblem,
+  initialState: SearchState,
+  segments: readonly number[],
+  turn: "left" | "right",
+  padding: number,
+  viewport: Size | null,
+): BoardLayoutSolution | null {
+  let state = initialState;
+
+  for (const side of getSolveOrder(state.arms)) {
+    const arm = state.arms[side];
+    let heading = arm.startHeading;
+    let segmentIndex = 0;
+    let segmentTarget = getSegmentTarget(segments, segmentIndex);
+    let segmentCount = 0;
+
+    for (let index = 0; index < arm.tiles.length; index += 1) {
+      if (segmentCount >= segmentTarget) {
+        heading = turn === "left" ? TURN_LEFT[heading] : TURN_RIGHT[heading];
+        segmentIndex += 1;
+        segmentTarget = getSegmentTarget(segments, segmentIndex);
+        segmentCount = 0;
+      }
+
+      const nextState = buildCandidateStates(state, side).find((candidate) => {
+        const placedTile = candidate.placedTiles[candidate.placedTiles.length - 1];
+        return placedTile.heading === heading;
+      });
+
+      if (!nextState) {
+        return null;
+      }
+
+      state = nextState;
+      segmentCount += 1;
+    }
+  }
+
+  return buildFinalSolution(extracted, state, padding, viewport);
+}
+
+function buildEmptySolution(
+  viewport: Size | null,
+  padding: number,
+): BoardLayoutSolution {
+  const geometry: BoardGeometry = {
+    placedTiles: [],
+    anchors: [
+      {
+        id: "initial",
+        ownerTileId: null,
+        attachmentPoint: { x: 0, y: 0 },
+        direction: "left",
+        openPip: 0,
+      },
+    ],
+  };
+  const problem: BoardLayoutProblem = {
+    viewport,
+    tileSize: {
+      shortSide: domino.width,
+      longSide: domino.height,
+    },
+    rootKind: "line",
+    rootTileId: null,
+    openEnds: [],
+    arms: SIDE_ORDER.map((side) => ({
+      side,
+      isOpen: false,
+      tiles: [],
+    })),
+  };
+  const camera = computeFitTransform(createZeroRect(), viewport ?? DEFAULT_VIEWPORT, padding);
+
+  return {
+    geometry,
+    openSlots: [],
+    occupiedBounds: createZeroRect(),
+    playableBounds: createZeroRect(),
+    fitScale: viewport ? camera.scale : 1,
+    camera,
+    bendPlan: {
+      left: [],
+      right: [],
+      up: [],
+      down: [],
+    },
+    score: {
+      clarityViolation: 0,
+      fitScale: viewport ? camera.scale : 1,
+      proximityPenalty: 0,
+      compactness: 0,
+      bendCount: 0,
+      rightTurnCount: 0,
+      leftTurnCount: 0,
+    },
+    problem,
+  };
+}
+
+function extractProblem(
+  board: BoardState,
+  viewport: Size | null,
+): ExtractedLayoutProblem {
+  const sortedTiles = [...board.tiles].sort((left, right) => left.placedAtSeq - right.placedAtSeq);
+  const spinnerId = board.spinnerTileId;
+  const rootTileIndex = spinnerId 
+    ? sortedTiles.findIndex(t => t.tile.id === spinnerId)
+    : 0;
+  const rootTile = sortedTiles[rootTileIndex === -1 ? 0 : rootTileIndex];
+  const rootKind: RootKind = rootTile.tile.sideA === rootTile.tile.sideB ? "spinner" : "line";
+  const normalizedRootTileIndex = rootTileIndex === -1 ? 0 : rootTileIndex;
+  const spinnerWasPlayedLater =
+    spinnerId !== null &&
+    sortedTiles.some(
+      (tile) => tile.tile.id !== spinnerId && tile.placedAtSeq < rootTile.placedAtSeq,
+    );
+  const armTilesBySide = buildArmTilesBySide(
+    sortedTiles,
+    normalizedRootTileIndex,
+    rootTile,
+    spinnerWasPlayedLater,
+  );
+  const activeOpenEnds = getActiveOpenEnds(board);
+  const openEndsBySide = activeOpenEnds.reduce<Partial<Record<ChainSide, DominoPip>>>(
+    (accumulator, openEnd) => ({
+      ...accumulator,
+      [openEnd.side]: openEnd.openPip,
+    }),
+    {},
+  );
+  const openEndSideSet = new Set(activeOpenEnds.map((openEnd) => openEnd.side));
+
+  return {
+    rootTile,
+    armTilesBySide,
+    openEndsBySide,
+    rootPipsBySide: getRootPipsBySide(armTilesBySide, board.openEnds),
+    problem: {
+      viewport,
+      tileSize: {
+        shortSide: domino.width,
+        longSide: domino.height,
+      },
+      rootKind,
+      rootTileId: rootTile.tile.id,
+      openEnds: activeOpenEnds,
+      arms: SIDE_ORDER.map((side) => ({
+        side,
+        isOpen: openEndSideSet.has(side),
+        tiles: armTilesBySide[side].map((tile) => ({
+          tileId: tile.tile.id,
+          isDouble: tile.tile.sideA === tile.tile.sideB,
+        })),
+      })),
+    },
+  };
+}
+
+function getActiveOpenEnds(board: BoardState): readonly BoardLayoutOpenEnd[] {
+  const { up, down } = getSpinnerBranchUnlocks(board);
+
+  return board.openEnds
+    .filter((openEnd) => {
+      if (openEnd.side === "up") {
+        return up;
+      }
+
+      if (openEnd.side === "down") {
+        return down;
+      }
+
+      return true;
+    })
+    .map((openEnd) => ({
+      side: openEnd.side,
+      ownerTileId: openEnd.tileId,
+      openPip: openEnd.pip,
+    }));
+}
+
+function groupTilesBySide(
+  tiles: readonly PlayedTile[],
+): Readonly<Record<ChainSide, readonly PlayedTile[]>> {
+  const grouped: Record<ChainSide, PlayedTile[]> = {
+    left: [],
+    right: [],
+    up: [],
+    down: [],
+  };
+
+  for (const tile of tiles) {
+    grouped[tile.side].push(tile);
+  }
+
+  for (const side of SIDE_ORDER) {
+    grouped[side].sort((left, right) => left.placedAtSeq - right.placedAtSeq);
+  }
+
+  return grouped;
+}
+
+function buildArmTilesBySide(
+  sortedTiles: readonly PlayedTile[],
+  rootTileIndex: number,
+  rootTile: PlayedTile,
+  spinnerWasPlayedLater: boolean,
+): Readonly<Record<ChainSide, readonly PlayedTile[]>> {
+  const armTiles = sortedTiles.filter((_, index) => index !== rootTileIndex);
+
+  if (!spinnerWasPlayedLater || (rootTile.side !== "left" && rootTile.side !== "right")) {
+    return groupTilesBySide(armTiles);
+  }
+
+  const preSpinnerTiles = armTiles.filter((tile) => tile.placedAtSeq < rootTile.placedAtSeq);
+  const postSpinnerTiles = armTiles.filter((tile) => tile.placedAtSeq > rootTile.placedAtSeq);
+  const preGrouped = groupTilesBySide(preSpinnerTiles);
+  const postGrouped = groupTilesBySide(postSpinnerTiles);
+
+  if (rootTile.side === "right") {
+    return {
+      left: [
+        ...[...preGrouped.right].reverse().map(flipPlayedTileOrientation),
+        ...preGrouped.left,
+        ...postGrouped.left,
+      ],
+      right: postGrouped.right,
+      up: postGrouped.up,
+      down: postGrouped.down,
     };
   }
 
-
-  const placedGeometries: PlacedTileGeometry[] = [];
-  const tilesById = new Map<TileId, PlacedTileGeometry>();
-
-  // 1. Reconstruct tiles in chronological order
-  const sortedTiles = [...board.tiles].sort((a, b) => a.placedAtSeq - b.placedAtSeq);
-  const firstTile = sortedTiles[0];
-  
-  // Place first tile at (0, 0)
-  // If first tile is a double, it's vertical (0 deg), otherwise horizontal (90 deg)
-  const isFirstDouble = firstTile.tile.sideA === firstTile.tile.sideB;
-  const firstGeom = createGeometry(
-    firstTile.tile.id,
-    firstTile.tile.sideA,
-    firstTile.tile.sideB,
-    { x: 0, y: 0 },
-    isFirstDouble ? 0 : 90
-  );
-  placedGeometries.push(firstGeom);
-  tilesById.set(firstTile.tile.id, firstGeom);
-
-  // We need to know which tile to attach to for each side.
-  // We initialize with the root of each branch.
-  const branchEnds: Record<ChainSide, TileId> = {
-    left: getBranchRootId(board, "left")!,
-    right: getBranchRootId(board, "right")!,
-    up: getBranchRootId(board, "up") || firstTile.tile.id,
-    down: getBranchRootId(board, "down") || firstTile.tile.id,
+  return {
+    left: postGrouped.left,
+    right: [
+      ...[...preGrouped.left].reverse().map(flipPlayedTileOrientation),
+      ...preGrouped.right,
+      ...postGrouped.right,
+    ],
+    up: postGrouped.up,
+    down: postGrouped.down,
   };
+}
 
-  for (let i = 1; i < sortedTiles.length; i++) {
-    const pTile = sortedTiles[i];
-    const side = pTile.side;
-    const prevTileId = branchEnds[side];
-    const prevGeom = tilesById.get(prevTileId)!;
+function flipPlayedTileOrientation(playedTile: PlayedTile): PlayedTile {
+  if (playedTile.tile.sideA === playedTile.tile.sideB) {
+    return playedTile;
+  }
 
-    // Create a temporary anchor to project the placement
-    const anchor = getAnchorOnTile(prevGeom, side, 0 /* pip doesn't matter for projection */);
-    
-    // Determine inward side
-    const isDouble = pTile.tile.sideA === pTile.tile.sideB;
-    let inwardSide: "sideA" | "sideB" = "sideA";
-    if (!isDouble) {
-      const inwardPip = pTile.tile.sideA === pTile.openPipFacingOutward ? pTile.tile.sideB : pTile.tile.sideA;
-      inwardSide = pTile.tile.sideA === inwardPip ? "sideA" : "sideB";
+  const inwardPip = getInwardPip(playedTile);
+
+  return {
+    ...playedTile,
+    openPipFacingOutward: inwardPip,
+  };
+}
+
+function buildRootCandidates(rootKind: RootKind): readonly RootCandidate[] {
+  if (rootKind === "spinner") {
+    return [
+      {
+        rotationDeg: 0,
+        startHeadings: {
+          left: "left",
+          right: "right",
+          up: "up",
+          down: "down",
+        },
+      },
+    ];
+  }
+
+  return [
+    {
+      rotationDeg: 90,
+      startHeadings: {
+        left: "left",
+        right: "right",
+      },
+    },
+    {
+      rotationDeg: 270,
+      startHeadings: {
+        left: "left",
+        right: "right",
+      },
+    },
+    {
+      rotationDeg: 0,
+      startHeadings: {
+        left: "up",
+        right: "down",
+      },
+    },
+    {
+      rotationDeg: 0,
+      startHeadings: {
+        left: "down",
+        right: "up",
+      },
+    },
+    {
+      rotationDeg: 180,
+      startHeadings: {
+        left: "down",
+        right: "up",
+      },
+    },
+    {
+      rotationDeg: 180,
+      startHeadings: {
+        left: "up",
+        right: "down",
+      },
+    },
+  ];
+}
+
+function getInwardPip(playedTile: PlayedTile): DominoPip {
+  if (playedTile.tile.sideA === playedTile.tile.sideB) {
+    return playedTile.tile.sideA;
+  }
+
+  return playedTile.tile.sideA === playedTile.openPipFacingOutward
+    ? playedTile.tile.sideB
+    : playedTile.tile.sideA;
+}
+
+function getPipAtDirection(
+  tile: PlayedTile["tile"],
+  rotationDeg: number,
+  direction: LayoutOrientation,
+): DominoPip | undefined {
+  switch (rotationDeg) {
+    case 0:
+      return direction === "up"
+        ? tile.sideA
+        : direction === "down"
+          ? tile.sideB
+          : undefined;
+    case 90:
+      return direction === "right"
+        ? tile.sideA
+        : direction === "left"
+          ? tile.sideB
+          : undefined;
+    case 180:
+      return direction === "down"
+        ? tile.sideA
+        : direction === "up"
+          ? tile.sideB
+          : undefined;
+    case 270:
+      return direction === "left"
+        ? tile.sideA
+        : direction === "right"
+          ? tile.sideB
+          : undefined;
+    default:
+      return undefined;
+  }
+}
+
+function getRootPipsBySide(
+  armTilesBySide: Readonly<Record<ChainSide, readonly PlayedTile[]>>,
+  boardOpenEnds: readonly BoardState["openEnds"][number][],
+): Partial<Record<ChainSide, DominoPip>> {
+  const rootPipsBySide: Partial<Record<ChainSide, DominoPip>> = {};
+
+  for (const side of ["left", "right"] as const) {
+    const firstArmTile = armTilesBySide[side][0];
+
+    if (firstArmTile) {
+      rootPipsBySide[side] = getInwardPip(firstArmTile);
+      continue;
     }
 
-    const geom = projectPlacement(pTile.tile, anchor, inwardSide);
-    placedGeometries.push(geom);
-    tilesById.set(pTile.tile.id, geom);
-    
-    // Update branch end
-    branchEnds[side] = pTile.tile.id;
+    const openEnd = boardOpenEnds.find((candidate) => candidate.side === side);
+    if (openEnd) {
+      rootPipsBySide[side] = openEnd.pip;
+    }
   }
 
-  return {
-    placedTiles: placedGeometries,
-    anchors: computeLegalAnchors(board, tilesById),
-  };
+  return rootPipsBySide;
 }
 
-function createGeometry(
-  tileId: TileId, 
-  sideA: DominoPip, 
-  sideB: DominoPip, 
-  center: Point, 
-  rotationDeg: number
-): PlacedTileGeometry {
+function isCompatibleLineRootCandidate(
+  rootTile: PlayedTile,
+  rootPipsBySide: Readonly<Partial<Record<ChainSide, DominoPip>>>,
+  candidate: RootCandidate,
+): boolean {
+  for (const side of ["left", "right"] as const) {
+    const expectedPip = rootPipsBySide[side];
+
+    if (expectedPip === undefined) {
+      continue;
+    }
+
+    const direction = candidate.startHeadings[side];
+    if (!direction) {
+      return false;
+    }
+
+    const actualPip = getPipAtDirection(rootTile.tile, candidate.rotationDeg, direction);
+    if (actualPip !== expectedPip) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function createRootPlacedTile(rootTile: PlayedTile, rotationDeg: number): SolverPlacedTile {
   const isVertical = rotationDeg === 0 || rotationDeg === 180;
-  const width = isVertical ? TILE_WIDTH : TILE_HEIGHT;
-  const height = isVertical ? TILE_HEIGHT : TILE_WIDTH;
-  
+
   return {
-    tileId,
-    value1: sideA,
-    value2: sideB,
-    center,
+    tileId: rootTile.tile.id,
+    value1: rootTile.tile.sideA,
+    value2: rootTile.tile.sideB,
+    center: { x: 0, y: 0 },
     rotationDeg,
-    width,
-    height,
+    width: isVertical ? domino.width : domino.height,
+    height: isVertical ? domino.height : domino.width,
+    placedAtSeq: rootTile.placedAtSeq,
+    logicalSide: rootTile.side,
+    heading:
+      rotationDeg === 0
+        ? "up"
+        : rotationDeg === 180
+          ? "down"
+          : rotationDeg === 90
+            ? "right"
+            : "left",
   };
 }
 
-function getAnchorOnTile(geom: PlacedTileGeometry, side: ChainSide, openPip: DominoPip): LayoutAnchor {
-  let attachmentPoint: Point;
-  if (side === "left") attachmentPoint = { x: geom.center.x - geom.width / 2, y: geom.center.y };
-  else if (side === "right") attachmentPoint = { x: geom.center.x + geom.width / 2, y: geom.center.y };
-  else if (side === "up") attachmentPoint = { x: geom.center.x, y: geom.center.y - geom.height / 2 };
-  else attachmentPoint = { x: geom.center.x, y: geom.center.y + geom.height / 2 };
-  
-  return {
-    id: `${geom.tileId}-${side}`,
-    ownerTileId: geom.tileId,
+function resolveInwardTileSide(playedTile: PlayedTile): TileSide {
+  return playedTile.tile.sideA === getInwardPip(playedTile) ? "sideA" : "sideB";
+}
+
+function createPlacement(
+  playedTile: PlayedTile,
+  logicalSide: ChainSide,
+  attachmentPoint: Point,
+  heading: LayoutOrientation,
+): SolverPlacedTile {
+  const anchor: LayoutAnchor = {
+    id: `${playedTile.tile.id}-${logicalSide}`,
+    ownerTileId: null,
     attachmentPoint,
-    direction: side,
-    openPip,
+    direction: logicalSide,
+    ...(heading === logicalSide ? {} : { visualDirection: heading }),
+    openPip: playedTile.openPipFacingOutward,
+  };
+  const geometry = projectPlacement(
+    playedTile.tile,
+    anchor,
+    resolveInwardTileSide(playedTile),
+  );
+
+  return {
+    ...geometry,
+    placedAtSeq: playedTile.placedAtSeq,
+    logicalSide,
+    heading,
   };
 }
 
-function computeLegalAnchors(board: BoardState, tilesById: Map<TileId, PlacedTileGeometry>): LayoutAnchor[] {
-  // If no tiles, special anchor at center
-  if (board.tiles.length === 0) {
-    return [{
-      id: "initial",
-      ownerTileId: null,
-      attachmentPoint: { x: 0, y: 0 },
-      direction: "left", 
-      openPip: 0,
-    }];
+function createInitialState(
+  extracted: ExtractedLayoutProblem,
+  rootCandidate: RootCandidate,
+): SearchState {
+  const rootTile = createRootPlacedTile(extracted.rootTile, rootCandidate.rotationDeg);
+  const rootRect = rectFromTile(rootTile);
+  const rootAnchors = SIDE_ORDER.reduce<Record<ChainSide, Point>>((accumulator, side) => {
+    const heading = rootCandidate.startHeadings[side] ?? side;
+    accumulator[side] = getRectEdgePoint(rootRect, heading);
+    return accumulator;
+  }, {
+    left: { x: 0, y: 0 },
+    right: { x: 0, y: 0 },
+    up: { x: 0, y: 0 },
+    down: { x: 0, y: 0 },
+  });
+
+  const arms = SIDE_ORDER.reduce<Record<ChainSide, RuntimeArmState>>((accumulator, side) => {
+    const armProblem = extracted.problem.arms.find((arm) => arm.side === side);
+
+    accumulator[side] = {
+      side,
+      isOpen: armProblem?.isOpen ?? false,
+      tiles: extracted.armTilesBySide[side],
+      startHeading: rootCandidate.startHeadings[side] ?? side,
+      rootAttachmentPoint: rootAnchors[side],
+      openFaceCenter: null,
+      currentHeading: rootCandidate.startHeadings[side] ?? side,
+      placedCount: 0,
+      bends: 0,
+      leftTurns: 0,
+      rightTurns: 0,
+      runLengths: [],
+      currentRunLength: 0,
+      lastTileId: extracted.rootTile.tile.id,
+    };
+    return accumulator;
+  }, {
+    left: createEmptyArmState("left"),
+    right: createEmptyArmState("right"),
+    up: createEmptyArmState("up"),
+    down: createEmptyArmState("down"),
+  });
+
+  const openSlots = SIDE_ORDER.flatMap((side) => {
+    const arm = arms[side];
+
+    if (!arm.isOpen || arm.tiles.length > 0) {
+      return [];
+    }
+
+    return [createOpenSlot(side, arm.rootAttachmentPoint, arm.startHeading)];
+  });
+
+  return {
+    placedTiles: [rootTile],
+    tileRects: [rootRect],
+    openSlots,
+    arms,
+  };
+}
+
+function createEmptyArmState(side: ChainSide): RuntimeArmState {
+  return {
+    side,
+    isOpen: false,
+    tiles: [],
+    startHeading: side,
+    rootAttachmentPoint: { x: 0, y: 0 },
+    openFaceCenter: null,
+    currentHeading: side,
+    placedCount: 0,
+    bends: 0,
+    leftTurns: 0,
+    rightTurns: 0,
+    runLengths: [],
+    currentRunLength: 0,
+    lastTileId: null,
+  };
+}
+
+function rectFromTile(tile: PlacedTileGeometry): Rect {
+  return {
+    x: tile.center.x - tile.width / 2,
+    y: tile.center.y - tile.height / 2,
+    width: tile.width,
+    height: tile.height,
+  };
+}
+
+function getRectEdgePoint(rect: Rect, heading: LayoutOrientation): Point {
+  if (heading === "left") {
+    return { x: rect.x, y: rect.y + rect.height / 2 };
   }
 
+  if (heading === "right") {
+    return { x: rect.x + rect.width, y: rect.y + rect.height / 2 };
+  }
 
+  if (heading === "up") {
+    return { x: rect.x + rect.width / 2, y: rect.y };
+  }
 
-  const { up: upUnlocked, down: downUnlocked } = getSpinnerBranchUnlocks(board);
-
-  return board.openEnds
-    .filter(oe => {
-      if (oe.side === "up") return upUnlocked;
-      if (oe.side === "down") return downUnlocked;
-      return true;
-    })
-    .map(oe => {
-      const geom = tilesById.get(oe.tileId!)!;
-      return getAnchorOnTile(geom, oe.side, oe.pip);
-    });
+  return { x: rect.x + rect.width / 2, y: rect.y + rect.height };
 }
 
+function offsetPoint(
+  point: Point,
+  heading: LayoutOrientation,
+  distance: number,
+): Point {
+  if (heading === "left") {
+    return { x: point.x - distance, y: point.y };
+  }
+
+  if (heading === "right") {
+    return { x: point.x + distance, y: point.y };
+  }
+
+  if (heading === "up") {
+    return { x: point.x, y: point.y - distance };
+  }
+
+  return { x: point.x, y: point.y + distance };
+}
+
+function getOpenFaceCenter(
+  tile: PlacedTileGeometry,
+  heading: LayoutOrientation,
+): Point {
+  if (tile.value1 === tile.value2) {
+    return tile.center;
+  }
+
+  return offsetPoint(tile.center, heading, domino.width / 2);
+}
+
+function getPlacementAttachmentPoint(
+  openFaceCenter: Point,
+  heading: LayoutOrientation,
+): Point {
+  return offsetPoint(openFaceCenter, heading, domino.width / 2);
+}
+
+function updateArmState(
+  arm: RuntimeArmState,
+  tileId: TileId,
+  openFaceCenter: Point,
+  nextHeading: LayoutOrientation,
+  turnDirection: "straight" | "left" | "right",
+): RuntimeArmState {
+  const isTurn = turnDirection !== "straight" && arm.placedCount > 0;
+  const nextRunLengths =
+    arm.placedCount === 0
+      ? [1]
+      : turnDirection === "straight"
+        ? [...arm.runLengths.slice(0, -1), arm.currentRunLength + 1]
+        : [...arm.runLengths, 1];
+
+  return {
+    ...arm,
+    openFaceCenter,
+    currentHeading: nextHeading,
+    placedCount: arm.placedCount + 1,
+    bends: arm.bends + (isTurn ? 1 : 0),
+    leftTurns: arm.leftTurns + (turnDirection === "left" ? 1 : 0),
+    rightTurns: arm.rightTurns + (turnDirection === "right" ? 1 : 0),
+    runLengths: nextRunLengths,
+    currentRunLength: turnDirection === "straight" ? arm.currentRunLength + 1 : 1,
+    lastTileId: tileId,
+  };
+}
+
+function selectNextSide(
+  arms: Readonly<Record<ChainSide, RuntimeArmState>>,
+): ChainSide | null {
+  const candidates = SIDE_ORDER.filter((side) => arms[side].placedCount < arms[side].tiles.length);
+
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  candidates.sort((leftSide, rightSide) => {
+    const leftRemaining = arms[leftSide].tiles.length - arms[leftSide].placedCount;
+    const rightRemaining = arms[rightSide].tiles.length - arms[rightSide].placedCount;
+
+    if (leftRemaining !== rightRemaining) {
+      return rightRemaining - leftRemaining;
+    }
+
+    return SIDE_ORDER.indexOf(leftSide) - SIDE_ORDER.indexOf(rightSide);
+  });
+
+  return candidates[0];
+}
+
+function buildCandidateStates(
+  state: SearchState,
+  side: ChainSide,
+): readonly SearchState[] {
+  const arm = state.arms[side];
+  const playedTile = arm.tiles[arm.placedCount];
+
+  if (!playedTile) {
+    return [];
+  }
+
+  const previousHeading = arm.placedCount === 0 ? arm.startHeading : arm.currentHeading;
+  const headings =
+    arm.placedCount === 0
+      ? [arm.startHeading]
+      : [arm.currentHeading, TURN_LEFT[previousHeading], TURN_RIGHT[previousHeading]];
+  const uniqueHeadings = [...new Set(headings)];
+  const candidates: SearchState[] = [];
+
+  for (const heading of uniqueHeadings) {
+    const attachmentPoint =
+      arm.placedCount === 0 || arm.openFaceCenter === null
+        ? arm.rootAttachmentPoint
+        : getPlacementAttachmentPoint(arm.openFaceCenter, heading);
+    const tile = createPlacement(playedTile, side, attachmentPoint, heading);
+    const tileRect = rectFromTile(tile);
+
+    if (
+      hasRectOverlap(tileRect, state.tileRects) ||
+      hasReservedSlotOverlap(tileRect, state.openSlots)
+    ) {
+      continue;
+    }
+
+    const turnDirection =
+      arm.placedCount === 0 || heading === previousHeading
+        ? "straight"
+        : TURN_LEFT[previousHeading] === heading
+          ? "left"
+          : "right";
+    const nextOpenFaceCenter = getOpenFaceCenter(tile, heading);
+    const nextArm = updateArmState(
+      arm,
+      tile.tileId,
+      nextOpenFaceCenter,
+      heading,
+      turnDirection,
+    );
+    const nextArms = {
+      ...state.arms,
+      [side]: nextArm,
+    };
+    const createdOpenSlot =
+      nextArm.placedCount === nextArm.tiles.length && nextArm.isOpen
+        ? createOpenSlot(
+            side,
+            getPlacementAttachmentPoint(nextOpenFaceCenter, heading),
+            heading,
+          )
+        : null;
+    const nextOpenSlots = createdOpenSlot ? [...state.openSlots, createdOpenSlot] : state.openSlots;
+
+    if (hasOpenSlotOverlap(createdOpenSlot, [...state.tileRects, tileRect], state.openSlots)) {
+      continue;
+    }
+
+    const candidateState: SearchState = {
+      placedTiles: [...state.placedTiles, tile],
+      tileRects: [...state.tileRects, tileRect],
+      openSlots: nextOpenSlots,
+      arms: nextArms,
+    };
+
+    if (hasUnrelatedEdgeTouch(candidateState, state.placedTiles[0]?.tileId ?? null)) {
+      continue;
+    }
+
+    candidates.push(candidateState);
+  }
+
+  candidates.sort((left, right) => {
+    const leftScore = buildOptimisticScore(left);
+    const rightScore = buildOptimisticScore(right);
+
+    return compareScores(leftScore, rightScore);
+  });
+
+  return candidates;
+}
+
+function buildOptimisticScore(state: SearchState): LayoutScore {
+  return computeScore(
+    state.placedTiles,
+    state.openSlots,
+    1,
+    state.arms,
+    state.placedTiles[0]?.tileId ?? null,
+  );
+}
+
+function hasRectOverlap(candidateRect: Rect, rects: readonly Rect[]): boolean {
+  return rects.some((rect) => rectsOverlap(rect, candidateRect));
+}
+
+function hasReservedSlotOverlap(
+  candidateRect: Rect,
+  openSlots: readonly LayoutOpenSlot[],
+): boolean {
+  return openSlots.some((openSlot) => rectsOverlap(openSlot.rect, candidateRect));
+}
+
+function hasOpenSlotOverlap(
+  slot: LayoutOpenSlot | null,
+  tileRects: readonly Rect[],
+  openSlots: readonly LayoutOpenSlot[],
+): boolean {
+  if (!slot) {
+    return false;
+  }
+
+  if (hasRectOverlap(slot.rect, tileRects)) {
+    return true;
+  }
+
+  return openSlots.some((openSlot) => rectsOverlap(openSlot.rect, slot.rect));
+}
+
+function rectsOverlap(left: Rect, right: Rect): boolean {
+  const overlapX = Math.min(left.x + left.width, right.x + right.width) - Math.max(left.x, right.x);
+  const overlapY = Math.min(left.y + left.height, right.y + right.height) - Math.max(left.y, right.y);
+
+  return overlapX > 0.01 && overlapY > 0.01;
+}
+
+function rectsTouchOnEdge(left: Rect, right: Rect): boolean {
+  const horizontalGap = Math.min(
+    Math.abs(left.x + left.width - right.x),
+    Math.abs(right.x + right.width - left.x),
+  );
+  const verticalGap = Math.min(
+    Math.abs(left.y + left.height - right.y),
+    Math.abs(right.y + right.height - left.y),
+  );
+  const overlapX =
+    Math.min(left.x + left.width, right.x + right.width) -
+    Math.max(left.x, right.x);
+  const overlapY =
+    Math.min(left.y + left.height, right.y + right.height) -
+    Math.max(left.y, right.y);
+
+  return (horizontalGap <= 0.01 && overlapY > 0.01) || (verticalGap <= 0.01 && overlapX > 0.01);
+}
+
+function boundsFromRects(rects: readonly Rect[]): Rect {
+  if (rects.length === 0) {
+    return createZeroRect();
+  }
+
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+
+  for (const rect of rects) {
+    minX = Math.min(minX, rect.x);
+    minY = Math.min(minY, rect.y);
+    maxX = Math.max(maxX, rect.x + rect.width);
+    maxY = Math.max(maxY, rect.y + rect.height);
+  }
+
+  return {
+    x: minX,
+    y: minY,
+    width: maxX - minX,
+    height: maxY - minY,
+  };
+}
+
+function createZeroRect(): Rect {
+  return {
+    x: 0,
+    y: 0,
+    width: 0,
+    height: 0,
+  };
+}
+
+function buildFinalSolution(
+  extracted: ExtractedLayoutProblem,
+  state: SearchState,
+  padding: number,
+  viewport: Size | null,
+): BoardLayoutSolution {
+  const placedTiles = [...state.placedTiles].sort((left, right) => left.placedAtSeq - right.placedAtSeq);
+  const publicPlacedTiles: readonly PlacedTileGeometry[] = placedTiles.map((tile) => ({
+    tileId: tile.tileId,
+    value1: tile.value1,
+    value2: tile.value2,
+    center: tile.center,
+    rotationDeg: tile.rotationDeg,
+    width: tile.width,
+    height: tile.height,
+    placedAtSeq: tile.placedAtSeq,
+    logicalSide: tile.logicalSide,
+    heading: tile.heading,
+  }));
+  const anchors = buildAnchors(extracted, state, publicPlacedTiles);
+  const openSlots = anchors.map((anchor) =>
+    createOpenSlot(anchor.direction, anchor.attachmentPoint, anchor.visualDirection ?? anchor.direction),
+  );
+  const occupiedBounds = boundsFromRects(publicPlacedTiles.map(rectFromTile));
+  const playableBounds = boundsFromRects([
+    ...publicPlacedTiles.map(rectFromTile),
+    ...openSlots.map((slot) => slot.rect),
+  ]);
+  const camera = computeFitTransform(
+    occupiedBounds,
+    viewport ?? DEFAULT_VIEWPORT,
+    padding,
+    playableBounds,
+  );
+  const score = computeScore(
+    publicPlacedTiles,
+    openSlots,
+    camera.scale,
+    state.arms,
+    extracted.rootTile.tile.id,
+  );
+
+  return {
+    geometry: {
+      placedTiles: publicPlacedTiles,
+      anchors,
+    },
+    openSlots,
+    occupiedBounds,
+    playableBounds,
+    fitScale: score.fitScale,
+    camera,
+    bendPlan: {
+      left: state.arms.left.runLengths,
+      right: state.arms.right.runLengths,
+      up: state.arms.up.runLengths,
+      down: state.arms.down.runLengths,
+    },
+    score,
+    problem: extracted.problem,
+  };
+}
+
+function buildAnchors(
+  extracted: ExtractedLayoutProblem,
+  state: SearchState,
+  placedTiles: readonly PlacedTileGeometry[],
+): readonly LayoutAnchor[] {
+  return extracted.problem.openEnds.map((openEnd) => {
+    const arm = state.arms[openEnd.side];
+    const ownerTileId = arm.placedCount > 0 ? arm.lastTileId : extracted.rootTile.tile.id;
+    const visualDirection = arm.placedCount > 0 ? arm.currentHeading : arm.startHeading;
+    const attachmentPoint = arm.placedCount > 0
+      ? arm.openFaceCenter
+        ? getPlacementAttachmentPoint(arm.openFaceCenter, visualDirection)
+        : arm.rootAttachmentPoint
+      : arm.rootAttachmentPoint;
+
+    return {
+      id: `${ownerTileId ?? "root"}-${openEnd.side}`,
+      ownerTileId,
+      attachmentPoint,
+      direction: openEnd.side,
+      ...(visualDirection === openEnd.side ? {} : { visualDirection }),
+      openPip: openEnd.openPip,
+    };
+  });
+}
+
+function buildOptimisticStateScore(
+  extracted: ExtractedLayoutProblem,
+  state: SearchState,
+  padding: number,
+  viewport: Size | null,
+): LayoutScore {
+  const anchors = buildAnchors(
+    extracted,
+    {
+      ...state,
+      arms: SIDE_ORDER.reduce<Record<ChainSide, RuntimeArmState>>((accumulator, side) => {
+        accumulator[side] = state.arms[side];
+        return accumulator;
+      }, {
+        left: state.arms.left,
+        right: state.arms.right,
+        up: state.arms.up,
+        down: state.arms.down,
+      }),
+    },
+    state.placedTiles,
+  );
+  const openSlots = anchors
+    .filter((anchor) => state.arms[anchor.direction].placedCount === state.arms[anchor.direction].tiles.length)
+    .map((anchor) =>
+      createOpenSlot(anchor.direction, anchor.attachmentPoint, anchor.visualDirection ?? anchor.direction),
+    );
+  const playableBounds = boundsFromRects([
+    ...state.tileRects,
+    ...openSlots.map((slot) => slot.rect),
+  ]);
+  const occupiedBounds = boundsFromRects(state.tileRects);
+  const camera = computeFitTransform(
+    occupiedBounds,
+    viewport ?? DEFAULT_VIEWPORT,
+    padding,
+    playableBounds,
+  );
+
+  return computeScore(
+    state.placedTiles,
+    openSlots,
+    viewport ? camera.scale : 1,
+    state.arms,
+    extracted.rootTile.tile.id,
+  );
+}
+
+function computeScore(
+  placedTiles: readonly PlacedTileGeometry[],
+  openSlots: readonly LayoutOpenSlot[],
+  fitScale: number,
+  arms: Readonly<Record<ChainSide, RuntimeArmState>>,
+  rootTileId: TileId | null,
+): LayoutScore {
+  const { clarityViolation, proximityPenalty } = buildLayoutClarityMetrics(
+    placedTiles,
+    openSlots,
+    arms,
+    rootTileId,
+  );
+  const compactness = placedTiles.reduce(
+    (total, tile) => total + tile.center.x * tile.center.x + tile.center.y * tile.center.y,
+    0,
+  );
+
+  return {
+    clarityViolation,
+    fitScale,
+    proximityPenalty,
+    compactness,
+    bendCount: SIDE_ORDER.reduce((total, side) => total + arms[side].bends, 0),
+    rightTurnCount: SIDE_ORDER.reduce((total, side) => total + arms[side].rightTurns, 0),
+    leftTurnCount: SIDE_ORDER.reduce((total, side) => total + arms[side].leftTurns, 0),
+  };
+}
+
+function canBeat(candidate: LayoutScore, best: LayoutScore): boolean {
+  return compareScores(candidate, best) <= 0;
+}
+
+function isBetterScore(left: LayoutScore, right: LayoutScore): boolean {
+  return compareScores(left, right) < 0;
+}
+
+function getSolveOrder(
+  arms: Readonly<Record<ChainSide, RuntimeArmState>>,
+): readonly ChainSide[] {
+  return [...SIDE_ORDER].sort((leftSide, rightSide) => {
+    const leftLength = arms[leftSide].tiles.length;
+    const rightLength = arms[rightSide].tiles.length;
+
+    if (leftLength !== rightLength) {
+      return rightLength - leftLength;
+    }
+
+    return SIDE_ORDER.indexOf(leftSide) - SIDE_ORDER.indexOf(rightSide);
+  });
+}
+
+function getSegmentTarget(segments: readonly number[], index: number): number {
+  if (segments.length === 0) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  if (index < segments.length) {
+    return segments[index];
+  }
+
+  return segments[segments.length - 1];
+}
+
+function normalizeViewport(viewport: Size | null): Size | null {
+  if (!viewport || viewport.width <= 0 || viewport.height <= 0) {
+    return null;
+  }
+
+  return viewport;
+}
+
+function compareScores(left: LayoutScore, right: LayoutScore): number {
+  if (left.clarityViolation < right.clarityViolation - SCORE_EPSILON) {
+    return -1;
+  }
+
+  if (left.clarityViolation > right.clarityViolation + SCORE_EPSILON) {
+    return 1;
+  }
+
+  if (left.fitScale > right.fitScale + SCORE_EPSILON) {
+    return -1;
+  }
+
+  if (left.fitScale < right.fitScale - SCORE_EPSILON) {
+    return 1;
+  }
+
+  if (left.proximityPenalty < right.proximityPenalty - SCORE_EPSILON) {
+    return -1;
+  }
+
+  if (left.proximityPenalty > right.proximityPenalty + SCORE_EPSILON) {
+    return 1;
+  }
+
+  if (left.compactness < right.compactness - SCORE_EPSILON) {
+    return -1;
+  }
+
+  if (left.compactness > right.compactness + SCORE_EPSILON) {
+    return 1;
+  }
+
+  if (left.bendCount !== right.bendCount) {
+    return left.bendCount - right.bendCount;
+  }
+
+  if (left.rightTurnCount !== right.rightTurnCount) {
+    return left.rightTurnCount - right.rightTurnCount;
+  }
+
+  if (left.leftTurnCount !== right.leftTurnCount) {
+    return right.leftTurnCount - left.leftTurnCount;
+  }
+
+  return 0;
+}
+
+function buildLayoutClarityMetrics(
+  placedTiles: readonly PlacedTileGeometry[],
+  openSlots: readonly LayoutOpenSlot[],
+  arms: Readonly<Record<ChainSide, RuntimeArmState>>,
+  rootTileId: TileId | null,
+): Readonly<{
+  clarityViolation: number;
+  proximityPenalty: number;
+}> {
+  const subjects = buildGeometrySubjects(placedTiles, openSlots, arms, rootTileId);
+  let clarityViolation = 0;
+  let proximityPenalty = 0;
+
+  for (let leftIndex = 0; leftIndex < subjects.length; leftIndex += 1) {
+    for (let rightIndex = leftIndex + 1; rightIndex < subjects.length; rightIndex += 1) {
+      const left = subjects[leftIndex];
+      const right = subjects[rightIndex];
+
+      if (areRelatedSubjects(left, right, rootTileId)) {
+        continue;
+      }
+
+      const spacing = measureSubjectSpacing(left, right);
+      if (spacing.edgeTouch) {
+        clarityViolation += HARD_CLARITY_THRESHOLD + HARD_ENDPOINT_THRESHOLD;
+        continue;
+      }
+
+      clarityViolation +=
+        Math.max(0, HARD_CLARITY_THRESHOLD - spacing.parallelGap) +
+        Math.max(0, HARD_ENDPOINT_THRESHOLD - spacing.endpointGap);
+
+      const preferredGap = Math.min(spacing.rectGap, spacing.endpointGap);
+      if (preferredGap < SOFT_PROXIMITY_THRESHOLD) {
+        const crowding = SOFT_PROXIMITY_THRESHOLD - preferredGap;
+        proximityPenalty += crowding * crowding;
+      }
+    }
+  }
+
+  return {
+    clarityViolation,
+    proximityPenalty,
+  };
+}
+
+function buildGeometrySubjects(
+  placedTiles: readonly PlacedTileGeometry[],
+  openSlots: readonly LayoutOpenSlot[],
+  arms: Readonly<Record<ChainSide, RuntimeArmState>>,
+  rootTileId: TileId | null,
+): readonly GeometrySubject[] {
+  const armTilePositions = buildArmTilePositions(arms);
+  const endpointTileIds = new Set<TileId>(
+    SIDE_ORDER.flatMap((side) => {
+      const tileId = arms[side].placedCount > 0 ? arms[side].lastTileId : null;
+      return tileId ? [tileId] : [];
+    }),
+  );
+
+  const tileSubjects = placedTiles.map<GeometrySubject>((tile) => {
+    const position = armTilePositions.get(tile.tileId);
+
+    return {
+      id: `tile:${tile.tileId}`,
+      kind: "tile",
+      rect: rectFromTile(tile),
+      logicalSide: position?.side ?? tile.logicalSide,
+      tileId: tile.tileId,
+      ownerTileId: null,
+      armIndex: position?.index ?? null,
+      focusPoint: endpointTileIds.has(tile.tileId) ? getOpenFaceCenter(tile, tile.heading) : null,
+    };
+  });
+
+  const slotSubjects = openSlots.map<GeometrySubject>((slot) => {
+    const arm = arms[slot.side];
+    const ownerTileId = arm.placedCount > 0 ? arm.lastTileId : rootTileId;
+
+    return {
+      id: `slot:${slot.side}:${ownerTileId ?? "root"}`,
+      kind: "slot",
+      rect: slot.rect,
+      logicalSide: slot.side,
+      tileId: null,
+      ownerTileId,
+      armIndex: arm.placedCount > 0 ? arm.placedCount - 1 : null,
+      focusPoint: slot.attachmentPoint,
+    };
+  });
+
+  return [...tileSubjects, ...slotSubjects];
+}
+
+function buildArmTilePositions(
+  arms: Readonly<Record<ChainSide, RuntimeArmState>>,
+): ReadonlyMap<TileId, ArmTilePosition> {
+  const positions = new Map<TileId, ArmTilePosition>();
+
+  for (const side of SIDE_ORDER) {
+    const arm = arms[side];
+
+    for (let index = 0; index < arm.placedCount; index += 1) {
+      const tile = arm.tiles[index];
+
+      if (tile) {
+        positions.set(tile.tile.id, { side, index });
+      }
+    }
+  }
+
+  return positions;
+}
+
+function areRelatedSubjects(
+  left: GeometrySubject,
+  right: GeometrySubject,
+  rootTileId: TileId | null,
+): boolean {
+  if (left.kind === "slot" && right.kind === "slot") {
+    return left.ownerTileId !== null && left.ownerTileId === right.ownerTileId;
+  }
+
+  if (left.kind === "slot" || right.kind === "slot") {
+    const slot = left.kind === "slot" ? left : right;
+    const tile = left.kind === "tile" ? left : right;
+
+    if (slot.ownerTileId === tile.tileId) {
+      return true;
+    }
+
+    if (rootTileId !== null && tile.tileId === rootTileId && slot.armIndex === null) {
+      return true;
+    }
+
+    return false;
+  }
+
+  if (left.logicalSide === right.logicalSide && left.armIndex !== null && right.armIndex !== null) {
+    return Math.abs(left.armIndex - right.armIndex) === 1;
+  }
+
+  if (rootTileId === null) {
+    return false;
+  }
+
+  if (left.tileId === rootTileId && right.armIndex === 0) {
+    return true;
+  }
+
+  if (right.tileId === rootTileId && left.armIndex === 0) {
+    return true;
+  }
+
+  return false;
+}
+
+function measureSubjectSpacing(
+  left: GeometrySubject,
+  right: GeometrySubject,
+): Readonly<{
+  rectGap: number;
+  parallelGap: number;
+  endpointGap: number;
+  edgeTouch: boolean;
+}> {
+  const overlapX = Math.min(left.rect.x + left.rect.width, right.rect.x + right.rect.width) -
+    Math.max(left.rect.x, right.rect.x);
+  const overlapY = Math.min(left.rect.y + left.rect.height, right.rect.y + right.rect.height) -
+    Math.max(left.rect.y, right.rect.y);
+  const gapX = Math.max(
+    0,
+    Math.max(left.rect.x - (right.rect.x + right.rect.width), right.rect.x - (left.rect.x + left.rect.width)),
+  );
+  const gapY = Math.max(
+    0,
+    Math.max(left.rect.y - (right.rect.y + right.rect.height), right.rect.y - (left.rect.y + left.rect.height)),
+  );
+  const horizontalLaneGap =
+    gapX > 0 && overlapY > CLARITY_LANE_OVERLAP ? gapX : Number.POSITIVE_INFINITY;
+  const verticalLaneGap =
+    gapY > 0 && overlapX > CLARITY_LANE_OVERLAP ? gapY : Number.POSITIVE_INFINITY;
+  const endpointGap = Math.min(
+    left.focusPoint ? pointToRectDistance(left.focusPoint, right.rect) : Number.POSITIVE_INFINITY,
+    right.focusPoint ? pointToRectDistance(right.focusPoint, left.rect) : Number.POSITIVE_INFINITY,
+    left.focusPoint && right.focusPoint
+      ? pointDistance(left.focusPoint, right.focusPoint)
+      : Number.POSITIVE_INFINITY,
+  );
+
+  const edgeTouch = rectsTouchOnEdge(left.rect, right.rect);
+
+  return {
+    rectGap: Math.hypot(gapX, gapY),
+    parallelGap: Math.min(horizontalLaneGap, verticalLaneGap),
+    endpointGap,
+    edgeTouch,
+  };
+}
+
+function hasUnrelatedEdgeTouch(
+  state: SearchState,
+  rootTileId: TileId | null,
+): boolean {
+  const subjects = buildGeometrySubjects(state.placedTiles, state.openSlots, state.arms, rootTileId);
+
+  for (let leftIndex = 0; leftIndex < subjects.length; leftIndex += 1) {
+    for (let rightIndex = leftIndex + 1; rightIndex < subjects.length; rightIndex += 1) {
+      const left = subjects[leftIndex];
+      const right = subjects[rightIndex];
+
+      if (areRelatedSubjects(left, right, rootTileId)) {
+        continue;
+      }
+
+      if (rectsTouchOnEdge(left.rect, right.rect)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+function pointDistance(left: Point, right: Point): number {
+  return Math.hypot(left.x - right.x, left.y - right.y);
+}
+
+function pointToRectDistance(point: Point, rect: Rect): number {
+  const dx =
+    point.x < rect.x ? rect.x - point.x : point.x > rect.x + rect.width ? point.x - (rect.x + rect.width) : 0;
+  const dy =
+    point.y < rect.y ? rect.y - point.y : point.y > rect.y + rect.height ? point.y - (rect.y + rect.height) : 0;
+
+  return Math.hypot(dx, dy);
+}

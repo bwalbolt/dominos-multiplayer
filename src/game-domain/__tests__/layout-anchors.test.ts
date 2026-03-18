@@ -34,7 +34,7 @@ describe("Layout anchors from fixture replays", () => {
     const game = requireGame(reconstructGameState(OPENING_EVENT_LOG).game);
     const geometry = calculateBoardGeometry(requireBoard(game));
 
-    expect(geometry.placedTiles).toEqual([
+    expect(geometry.placedTiles).toMatchObject([
       {
         tileId: getFixtureTileId(6, 6),
         value1: 6,
@@ -67,7 +67,7 @@ describe("Layout anchors from fixture replays", () => {
     const game = requireGame(reconstructGameState(SPINNER_EXPANSION_EVENT_LOG).game);
     const geometry = calculateBoardGeometry(requireBoard(game));
 
-    expect(geometry.placedTiles).toEqual([
+    expect(geometry.placedTiles).toMatchObject([
       {
         tileId: getFixtureTileId(6, 6),
         value1: 6,

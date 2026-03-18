@@ -4,7 +4,16 @@ import {
   reconstructGameState,
   type GameState,
 } from "../index";
-import { FIXTURE_IDS, FIXTURE_TILE_CATALOG_BY_ID } from "./fixtures/builders";
+import {
+  buildFixtureEventLog,
+  createGameStartedStep,
+  createHandsByPlayerId,
+  createRoundStartedStep,
+  createTilePlayedStep,
+  FIXTURE_IDS,
+  FIXTURE_TILE_CATALOG_BY_ID,
+  getFixtureTileId,
+} from "./fixtures/builders";
 import {
   BLOCKED_ROUND_EVENT_LOG,
   OPENING_EVENT_LOG,
@@ -28,7 +37,7 @@ describe("Fives scoring fixtures", () => {
     expect(calculateFivesBoardScore(board!)).toBe(0);
   });
 
-  it("scores zero once both spinner arms unlock but before up/down tiles are played", () => {
+  it("scores zero once both spinner arms unlock because spinner up/down stay playable but stop counting", () => {
     const state = reconstructGameState(SPINNER_EXPANSION_EVENT_LOG.slice(0, 5));
     const board = requireGame(state.game).currentRound?.board;
 
@@ -39,8 +48,75 @@ describe("Fives scoring fixtures", () => {
       { side: "up", pip: 6, tileId: "tile-6-6" },
       { side: "down", pip: 6, tileId: "tile-6-6" },
     ]);
-    // Spinner (6-6) has 2 branches, so it counts as 0. 
-    // Ends are left: 2 and right: 1. Total = 3.
+    // Once the spinner is connected on its left and right sides, the up/down
+    // spinner branches stay on the board for play but do not add scoring pips.
+    expect(calculateFivesBoardScore(board!)).toBe(0);
+  });
+
+  it("replays a later-round spinner introduction without counting untouched up/down spinner faces", () => {
+    const tile16 = getFixtureTileId(1, 6);
+    const tile66 = getFixtureTileId(6, 6);
+    const tile26 = getFixtureTileId(2, 6);
+    const tile02 = getFixtureTileId(0, 2);
+    const tile04 = getFixtureTileId(0, 4);
+    const tile24 = getFixtureTileId(2, 4);
+
+    const eventLog = buildFixtureEventLog([
+      createGameStartedStep(),
+      createRoundStartedStep({
+        roundNumber: 2,
+        handsByPlayerId: createHandsByPlayerId(
+          [tile16, tile26, tile04],
+          [tile66, tile02, tile24],
+        ),
+      }),
+      createTilePlayedStep({
+        playerId: FIXTURE_IDS.playerOneId,
+        tileId: tile16,
+        side: "left",
+        openPipFacingOutward: 1,
+      }),
+      createTilePlayedStep({
+        playerId: FIXTURE_IDS.playerTwoId,
+        tileId: tile66,
+        side: "right",
+        openPipFacingOutward: 6,
+      }),
+      createTilePlayedStep({
+        playerId: FIXTURE_IDS.playerOneId,
+        tileId: tile26,
+        side: "right",
+        openPipFacingOutward: 2,
+      }),
+      createTilePlayedStep({
+        playerId: FIXTURE_IDS.playerTwoId,
+        tileId: tile02,
+        side: "right",
+        openPipFacingOutward: 0,
+      }),
+      createTilePlayedStep({
+        playerId: FIXTURE_IDS.playerOneId,
+        tileId: tile04,
+        side: "right",
+        openPipFacingOutward: 4,
+      }),
+      createTilePlayedStep({
+        playerId: FIXTURE_IDS.playerTwoId,
+        tileId: tile24,
+        side: "right",
+        openPipFacingOutward: 2,
+      }),
+    ]);
+
+    const state = reconstructGameState(eventLog);
+    const board = requireGame(state.game).currentRound?.board;
+
+    expect(board?.openEnds).toEqual([
+      { side: "left", pip: 1, tileId: tile16 },
+      { side: "right", pip: 2, tileId: tile24 },
+      { side: "up", pip: 6, tileId: tile66 },
+      { side: "down", pip: 6, tileId: tile66 },
+    ]);
     expect(calculateFivesBoardScore(board!)).toBe(0);
   });
 
