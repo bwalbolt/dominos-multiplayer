@@ -37,7 +37,7 @@ describe("Fives scoring fixtures", () => {
     expect(calculateFivesBoardScore(board!)).toBe(0);
   });
 
-  it("scores zero once both spinner arms unlock because the untouched spinner tile stops counting", () => {
+  it("scores zero once both spinner arms unlock because spinner up/down stay playable but stop counting", () => {
     const state = reconstructGameState(SPINNER_EXPANSION_EVENT_LOG.slice(0, 5));
     const board = requireGame(state.game).currentRound?.board;
 
@@ -48,8 +48,8 @@ describe("Fives scoring fixtures", () => {
       { side: "up", pip: 6, tileId: "tile-6-6" },
       { side: "down", pip: 6, tileId: "tile-6-6" },
     ]);
-    // Once the spinner is connected on its left and right sides, the untouched
-    // spinner itself no longer contributes to the count.
+    // Once the spinner is connected on its left and right sides, the up/down
+    // spinner branches stay on the board for play but do not add scoring pips.
     expect(calculateFivesBoardScore(board!)).toBe(0);
   });
 

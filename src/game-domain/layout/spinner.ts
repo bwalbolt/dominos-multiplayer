@@ -3,8 +3,10 @@ import { BoardState, ChainSide, TileId } from "../types";
 
 /**
  * Determines which branches of a spinner are unlocked for playing.
- * In Fives, the up/down branches of the spinner are only available 
+ * In Fives, the up/down branches of the spinner are only available for play
  * after both ends of the main (left/right) axis have been played off.
+ * Those spinner-owned branches still do not contribute to the scoring total
+ * by themselves once the cross is unlocked.
  */
 export function getSpinnerBranchUnlocks(board: BoardState): {
   readonly up: boolean;

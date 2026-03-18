@@ -42,7 +42,7 @@ import {
   TileId,
 } from "@/src/game-domain/types";
 import {
-  calculateOpenEndsTotal,
+  calculateFivesScoringTotal,
   evaluateFivesLegalMoves,
 } from "@/src/game-domain/variants/fives";
 import {
@@ -143,8 +143,8 @@ function GameView({
   const opponentHandCount =
     currentRound.handsByPlayerId[player2Id]?.handCount || 0;
   const boneyardCount = currentRound.boneyard.remainingCount;
-  const openEndsTotal = useMemo(() => {
-    return calculateOpenEndsTotal(currentRound.board);
+  const fivesScoringTotal = useMemo(() => {
+    return calculateFivesScoringTotal(currentRound.board);
   }, [currentRound.board]);
   const isPlayerTurn = game.turn?.activePlayerId === player1Id;
   const isBoardInteractionEnabled =
@@ -846,7 +846,7 @@ function GameView({
         />
 
         <View style={styles.boneyardWrapper}>
-          <OpenEndsIndicator total={openEndsTotal} />
+          <OpenEndsIndicator scoringTotal={fivesScoringTotal} />
           <BoneyardIndicator count={boneyardCount} />
         </View>
 

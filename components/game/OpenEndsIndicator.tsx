@@ -5,15 +5,15 @@ import { StyleSheet } from "react-native-unistyles";
 import { spacing, typography } from "@/theme/tokens";
 
 interface OpenEndsIndicatorProps {
-  total: number;
+  scoringTotal: number;
 }
 
 export const OpenEndsIndicator: React.FC<OpenEndsIndicatorProps> = ({
-  total,
+  scoringTotal,
 }) => {
   return (
     <View style={styles.container}>
-      <Text style={styles.total}>{total}</Text>
+      <Text style={styles.total}>{scoringTotal}</Text>
       <Text style={styles.label}>board {"\n"}total</Text>
     </View>
   );

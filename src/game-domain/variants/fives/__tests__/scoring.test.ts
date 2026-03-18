@@ -13,7 +13,11 @@ import {
   createTargetScoreGameEndedEvent,
   evaluateRoundResolution,
 } from "../round-resolution";
-import { calculateFivesBoardScore } from "../scoring";
+import {
+  calculateFivesBoardScore,
+  calculateFivesScoringTotal,
+  getFivesScoringPipContributions,
+} from "../scoring";
 
 describe("Fives Scoring & Resolution", () => {
   const tileCatalog: Record<TileId, Tile> = {
@@ -141,7 +145,49 @@ describe("Fives Scoring & Resolution", () => {
         ],
       };
 
+      expect(getFivesScoringPipContributions(board)).toEqual([3, 12]);
+      expect(calculateFivesScoringTotal(board)).toBe(15);
       expect(calculateFivesBoardScore(board)).toBe(15);
+    });
+
+    it("keeps unlocked spinner up/down branches playable without counting them for score", () => {
+      const board: BoardState = {
+        layoutDirection: "horizontal",
+        spinnerTileId: "tile-6-6" as TileId,
+        openEnds: [
+          { side: "left", pip: 2 as DominoPip, tileId: "tile-2-6" as TileId },
+          { side: "right", pip: 1 as DominoPip, tileId: "tile-1-6" as TileId },
+          { side: "up", pip: 6 as DominoPip, tileId: "tile-6-6" as TileId },
+          { side: "down", pip: 6 as DominoPip, tileId: "tile-6-6" as TileId },
+        ],
+        tiles: [
+          {
+            tile: { id: "tile-2-6" as TileId, sideA: 2, sideB: 6 },
+            playedBy: "p1" as any,
+            placedAtSeq: 1,
+            side: "left",
+            openPipFacingOutward: 2,
+          },
+          {
+            tile: tileCatalog["tile-6-6" as TileId],
+            playedBy: "p2" as any,
+            placedAtSeq: 2,
+            side: "right",
+            openPipFacingOutward: 6,
+          },
+          {
+            tile: { id: "tile-1-6" as TileId, sideA: 1, sideB: 6 },
+            playedBy: "p1" as any,
+            placedAtSeq: 3,
+            side: "right",
+            openPipFacingOutward: 1,
+          },
+        ],
+      };
+
+      expect(getFivesScoringPipContributions(board)).toEqual([2, 1]);
+      expect(calculateFivesScoringTotal(board)).toBe(3);
+      expect(calculateFivesBoardScore(board)).toBe(0);
     });
   });
 
