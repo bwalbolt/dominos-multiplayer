@@ -13,19 +13,63 @@ export function createOpenSlot(
   side: ChainSide,
   attachmentPoint: Point,
   heading: LayoutOrientation,
+  options?: Readonly<{
+    isDouble?: boolean;
+  }>,
 ): LayoutOpenSlot {
   return {
     side,
     attachmentPoint,
     visualDirection: heading,
-    rect: createSlotRect(attachmentPoint, heading),
+    rect: createSlotRect(attachmentPoint, heading, options),
   };
 }
 
 export function createSlotRect(
   attachmentPoint: Point,
   heading: LayoutOrientation,
+  options?: Readonly<{
+    isDouble?: boolean;
+  }>,
 ): Rect {
+  const isDouble = options?.isDouble ?? false;
+
+  if (isDouble && heading === "left") {
+    return {
+      x: attachmentPoint.x - domino.width,
+      y: attachmentPoint.y - domino.height / 2,
+      width: domino.width,
+      height: domino.height,
+    };
+  }
+
+  if (isDouble && heading === "right") {
+    return {
+      x: attachmentPoint.x,
+      y: attachmentPoint.y - domino.height / 2,
+      width: domino.width,
+      height: domino.height,
+    };
+  }
+
+  if (isDouble && heading === "up") {
+    return {
+      x: attachmentPoint.x - domino.height / 2,
+      y: attachmentPoint.y - domino.width,
+      width: domino.height,
+      height: domino.width,
+    };
+  }
+
+  if (isDouble && heading === "down") {
+    return {
+      x: attachmentPoint.x - domino.height / 2,
+      y: attachmentPoint.y,
+      width: domino.height,
+      height: domino.width,
+    };
+  }
+
   if (heading === "left") {
     return {
       x: attachmentPoint.x - domino.height,
@@ -61,7 +105,12 @@ export function createSlotRect(
   };
 }
 
-export function createOpenSlotFromAnchor(anchor: LayoutAnchor): LayoutOpenSlot {
+export function createOpenSlotFromAnchor(
+  anchor: LayoutAnchor,
+  options?: Readonly<{
+    isDouble?: boolean;
+  }>,
+): LayoutOpenSlot {
   if (anchor.ownerTileId === null && anchor.id === "initial") {
     return {
       side: anchor.direction,
@@ -80,5 +129,6 @@ export function createOpenSlotFromAnchor(anchor: LayoutAnchor): LayoutOpenSlot {
     anchor.direction,
     anchor.attachmentPoint,
     anchor.visualDirection ?? anchor.direction,
+    options,
   );
 }

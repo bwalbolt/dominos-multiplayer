@@ -49,6 +49,7 @@ interface BoardAreaProps {
   board: BoardState;
   layout: BoardLayoutSolution;
   highlightedAnchor?: LayoutAnchor | null;
+  highlightedTileIsDouble?: boolean;
   previewTile?: PlacedTileGeometry | null;
   onTransitionActiveChange?: (isActive: boolean) => void;
 }
@@ -57,6 +58,7 @@ export const BoardArea: React.FC<BoardAreaProps> = ({
   board,
   layout,
   highlightedAnchor,
+  highlightedTileIsDouble = false,
   previewTile,
   onTransitionActiveChange,
 }) => {
@@ -101,9 +103,11 @@ export const BoardArea: React.FC<BoardAreaProps> = ({
   const highlightedOpenSlot = useMemo(
     () =>
       !isTransitionActive && highlightedAnchor
-        ? createOpenSlotFromAnchor(highlightedAnchor)
+        ? createOpenSlotFromAnchor(highlightedAnchor, {
+            isDouble: highlightedTileIsDouble,
+          })
         : null,
-    [highlightedAnchor, isTransitionActive],
+    [highlightedAnchor, highlightedTileIsDouble, isTransitionActive],
   );
   const worldStyle = useAnimatedStyle(() => ({
     transform: [

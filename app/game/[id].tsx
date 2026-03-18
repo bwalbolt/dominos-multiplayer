@@ -171,6 +171,7 @@ function GameView({
   }, [currentRound, playerHandIds, tileCatalog]);
 
   const {
+    draggedTileId,
     snapAnchor,
     dropTargetAnchor,
     hasClearedHandThreshold,
@@ -253,6 +254,14 @@ function GameView({
       ]),
     [activeHandDrag, placementAnimation, returningHandDrags],
   );
+  const highlightedTileIsDouble = useMemo(() => {
+    if (draggedTileId === null) {
+      return false;
+    }
+
+    const draggedTile = tileCatalog[draggedTileId];
+    return draggedTile ? draggedTile.sideA === draggedTile.sideB : false;
+  }, [draggedTileId, tileCatalog]);
   const usesVerticalDragActivation = playerHand.length >= 8;
 
   activeHandDragRef.current = activeHandDrag;
@@ -857,6 +866,7 @@ function GameView({
             highlightedAnchor={
               hasClearedHandThreshold ? dropTargetAnchor : null
             }
+            highlightedTileIsDouble={highlightedTileIsDouble}
             previewTile={snapAnchor ? previewGeometry : null}
             onTransitionActiveChange={setIsBoardTransitionActive}
           />

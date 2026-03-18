@@ -80,4 +80,61 @@ describe("open-slot", () => {
       },
     });
   });
+
+  it.each([
+    [
+      "left",
+      {
+        id: "left",
+        ownerTileId: "tile-6-6" as TileId,
+        attachmentPoint: { x: 0, y: 0 },
+        direction: "left",
+        openPip: 6,
+      } satisfies LayoutAnchor,
+      { x: -domino.width, y: -domino.height / 2, width: domino.width, height: domino.height },
+    ],
+    [
+      "right",
+      {
+        id: "right",
+        ownerTileId: "tile-6-6" as TileId,
+        attachmentPoint: { x: 0, y: 0 },
+        direction: "right",
+        openPip: 6,
+      } satisfies LayoutAnchor,
+      { x: 0, y: -domino.height / 2, width: domino.width, height: domino.height },
+    ],
+    [
+      "up",
+      {
+        id: "up",
+        ownerTileId: "tile-6-6" as TileId,
+        attachmentPoint: { x: 0, y: 0 },
+        direction: "up",
+        openPip: 6,
+      } satisfies LayoutAnchor,
+      { x: -domino.height / 2, y: -domino.width, width: domino.height, height: domino.width },
+    ],
+    [
+      "down",
+      {
+        id: "down",
+        ownerTileId: "tile-6-6" as TileId,
+        attachmentPoint: { x: 0, y: 0 },
+        direction: "down",
+        openPip: 6,
+      } satisfies LayoutAnchor,
+      { x: -domino.height / 2, y: 0, width: domino.height, height: domino.width },
+    ],
+  ])(
+    "uses double geometry for the %s anchor when the dragged tile is a double",
+    (_label, anchor, rect) => {
+      expect(createOpenSlotFromAnchor(anchor, { isDouble: true })).toEqual({
+        side: anchor.direction,
+        attachmentPoint: anchor.attachmentPoint,
+        visualDirection: anchor.direction,
+        rect,
+      });
+    },
+  );
 });
