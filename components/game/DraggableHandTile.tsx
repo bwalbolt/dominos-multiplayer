@@ -1,9 +1,9 @@
 import React from "react";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { 
-  runOnJS,
   useSharedValue,
 } from "react-native-reanimated";
+import { runOnJS } from "react-native-worklets";
 import { StyleSheet } from "react-native-unistyles";
 
 import { DominoTile } from "../domino/domino-tile";

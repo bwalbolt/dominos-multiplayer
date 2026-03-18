@@ -12,16 +12,22 @@ import {
   getHiddenHandTileIds,
 } from "@/components/game/hand-drag-state";
 import {
+  createCenteredDragTileVisual,
   createSourceDragTileVisual,
+  findLayoutAnchorForSide,
+  getDragTileVisualCenter,
+  projectPlacedTileGeometryToDragVisual,
   resolveDraggedTileVisual,
 } from "@/components/game/hand-drag-visual";
 import {
   ActiveHandDrag,
   DragTileVisual,
   HandTileDragStart,
+  OpponentPlacementAnimation,
   PlacementTileAnimation,
   ReturningHandDrag,
   ScreenPoint,
+  ScreenRect,
 } from "@/components/game/hand-drag.types";
 import { getComputerAction } from "@/src/game-domain/computer-player";
 import {
@@ -31,14 +37,22 @@ import {
   TilePlayedEvent,
   TurnPassedEvent,
 } from "@/src/game-domain/events/schema";
+import { projectPlacement } from "@/src/game-domain/layout/project-placement";
+import {
+  CameraTransform,
+  LayoutAnchor,
+  Point,
+} from "@/src/game-domain/layout/types";
 import { useBoardCamera } from "@/src/game-domain/layout/useBoardCamera";
 import { useBoardInteraction } from "@/src/game-domain/layout/useBoardInteraction";
 import { createRoundStartedEvent } from "@/src/game-domain/local-session";
 import { useLocalSessionStore } from "@/src/game-domain/local-session-store";
 import {
   EventId,
+  FivesLegalMove,
   PlayerId,
   ReconstructionState,
+  Tile,
   TileId,
 } from "@/src/game-domain/types";
 import {
@@ -59,6 +73,10 @@ import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 import { StyleSheet } from "react-native-unistyles";
 
 const DROP_SETTLE_PAUSE_MS = 100;
+const OPPONENT_PLAY_INTRO_DURATION_MS = 400;
+const OPPONENT_PLAY_SETTLE_DURATION_MS = 400;
+const OPPONENT_PLAY_INTRO_TRAVEL_PX = 100;
+const OPPONENT_PLAY_INTRO_CLEARANCE_PX = 48;
 
 export default function GameScreen() {
   const { id, opponentName } = useLocalSearchParams<{
@@ -130,6 +148,10 @@ function GameView({
   const [isBoardTransitionActive, setIsBoardTransitionActive] = useState(false);
   const [placementAnimation, setPlacementAnimation] =
     useState<PlacementTileAnimation | null>(null);
+  const [opponentPlacementAnimation, setOpponentPlacementAnimation] =
+    useState<OpponentPlacementAnimation | null>(null);
+  const [opponentLaunchTileRect, setOpponentLaunchTileRect] =
+    useState<ScreenRect | null>(null);
 
   const { playerHandIds, playerHand } = useMemo(() => {
     const ids = currentRound.handsByPlayerId[player1Id]?.tileIds || [];
@@ -151,7 +173,8 @@ function GameView({
     isPlayerTurn &&
     isScreenFocused &&
     !isBoardTransitionActive &&
-    placementAnimation === null;
+    placementAnimation === null &&
+    opponentPlacementAnimation === null;
 
   const opponentProfile = game.players.find(
     (p: any) => p.playerId === player2Id,
@@ -221,6 +244,7 @@ function GameView({
   const nextReturnIdRef = useRef(0);
   const nextPlacementIdRef = useRef(0);
   const pendingPlacementEventRef = useRef<TilePlayedEvent | null>(null);
+  const pendingOpponentPlayEventRef = useRef<TilePlayedEvent | null>(null);
   const placementPauseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -277,12 +301,15 @@ function GameView({
     returningHandDragsRef.current = [];
     currentDragVisualRef.current = null;
     pendingPlacementEventRef.current = null;
+    pendingOpponentPlayEventRef.current = null;
     if (placementPauseTimeoutRef.current) {
       clearTimeout(placementPauseTimeoutRef.current);
       placementPauseTimeoutRef.current = null;
     }
     setActiveHandDrag(null);
     setPlacementAnimation(null);
+    setOpponentPlacementAnimation(null);
+    setOpponentLaunchTileRect(null);
     setReturningHandDrags([]);
   }, [isScreenFocused]);
 
@@ -490,6 +517,26 @@ function GameView({
     [appendEvent],
   );
 
+  const handleOpponentPlacementAnimationComplete = useCallback(
+    (animationId: string) => {
+      setOpponentPlacementAnimation((current) => {
+        if (!current || current.animationId !== animationId) {
+          return current;
+        }
+
+        return null;
+      });
+
+      const event = pendingOpponentPlayEventRef.current;
+      pendingOpponentPlayEventRef.current = null;
+
+      if (event) {
+        appendEvent(event);
+      }
+    },
+    [appendEvent],
+  );
+
   const handleReturningDragStart = useCallback(
     (
       returnId: string,
@@ -605,8 +652,16 @@ function GameView({
     const isComputerTurn = game.turn?.activePlayerId === player2Id;
     const isRoundActive = currentRound.status === "active";
     const noResolutionPending = !resolution;
+    const hasPendingOpponentPlay =
+      pendingOpponentPlayEventRef.current !== null ||
+      opponentPlacementAnimation !== null;
 
-    if (isComputerTurn && isRoundActive && noResolutionPending) {
+    if (
+      isComputerTurn &&
+      isRoundActive &&
+      noResolutionPending &&
+      !hasPendingOpponentPlay
+    ) {
       const timer = setTimeout(() => {
         const action = getComputerAction(reconstruction, player2Id);
 
@@ -624,6 +679,22 @@ function GameView({
             side: action.move.side,
             openPipFacingOutward: action.move.openPipFacingOutward,
           };
+          const animation = createOpponentPlacementAnimation({
+            animationId: createNextPlacementId(),
+            move: action.move,
+            tileCatalog,
+            anchors: geometry.anchors,
+            cameraTransform: transform,
+            containerOffset,
+            sourceRect: opponentLaunchTileRect,
+          });
+
+          if (animation) {
+            pendingOpponentPlayEventRef.current = event;
+            setOpponentPlacementAnimation(animation);
+            return;
+          }
+
           appendEvent(event);
         } else if (action.kind === "draw") {
           const tileId = currentRound.boneyard.remainingTileIds[0];
@@ -671,6 +742,13 @@ function GameView({
     events.length,
     currentRound.roundId,
     currentRound.boneyard.remainingTileIds,
+    geometry.anchors,
+    transform,
+    containerOffset,
+    tileCatalog,
+    opponentLaunchTileRect,
+    opponentPlacementAnimation,
+    createNextPlacementId,
     appendEvent,
   ]);
 
@@ -852,6 +930,8 @@ function GameView({
         <OpponentHand
           count={opponentHandCount}
           isTurn={game.turn?.activePlayerId === player2Id}
+          isLaunchingTile={opponentPlacementAnimation !== null}
+          onLaunchTileRectChange={setOpponentLaunchTileRect}
         />
 
         <View style={styles.boneyardWrapper}>
@@ -876,7 +956,8 @@ function GameView({
         {isPlayerTurn &&
           playableTileIds.size === 0 &&
           !activeHandDrag &&
-          !placementAnimation && (
+          !placementAnimation &&
+          !opponentPlacementAnimation && (
             <View style={styles.drawButtonContainer}>
               <Pressable style={styles.drawButton} onPress={handleDraw}>
                 <Text style={styles.drawButtonText}>
@@ -944,7 +1025,9 @@ function GameView({
             playableTileIds={playableTileIds}
             hiddenTileIds={hiddenTileIds}
             hasActiveDrag={
-              activeHandDrag !== null || placementAnimation !== null
+              activeHandDrag !== null ||
+              placementAnimation !== null ||
+              opponentPlacementAnimation !== null
             }
             activeTileId={activeHandDrag?.tileId ?? null}
             isInteractionEnabled={isBoardInteractionEnabled}
@@ -955,16 +1038,45 @@ function GameView({
         </View>
       </View>
 
-      <View pointerEvents="box-none" style={styles.dragOverlay}>
+      <View pointerEvents="box-none" style={styles.opponentDragOverlay}>
+        <HandDragOverlay
+          activeDrag={null}
+          activeDragVisual={null}
+          placementAnimation={null}
+          opponentPlacementAnimation={opponentPlacementAnimation}
+          returningDrags={[]}
+          hideActiveDrag={false}
+          usesVerticalDragActivation={usesVerticalDragActivation}
+          hasActiveDrag={false}
+          onPlacementAnimationComplete={handlePlacementAnimationComplete}
+          onOpponentPlacementAnimationComplete={
+            handleOpponentPlacementAnimationComplete
+          }
+          onReturnComplete={handleReturnAnimationComplete}
+          onReturningDragStart={handleReturningDragStart}
+          onReturningDragUpdate={handleReturningDragUpdate}
+          onReturningDragEnd={handleReturningDragEnd}
+        />
+      </View>
+
+      <View pointerEvents="box-none" style={styles.playerDragOverlay}>
         <HandDragOverlay
           activeDrag={activeHandDrag}
           activeDragVisual={currentDragVisual}
           placementAnimation={placementAnimation}
+          opponentPlacementAnimation={null}
           returningDrags={returningHandDrags}
           hideActiveDrag={snapAnchor !== null}
           usesVerticalDragActivation={usesVerticalDragActivation}
-          hasActiveDrag={activeHandDrag !== null || placementAnimation !== null}
+          hasActiveDrag={
+            activeHandDrag !== null ||
+            placementAnimation !== null ||
+            opponentPlacementAnimation !== null
+          }
           onPlacementAnimationComplete={handlePlacementAnimationComplete}
+          onOpponentPlacementAnimationComplete={
+            handleOpponentPlacementAnimationComplete
+          }
           onReturnComplete={handleReturnAnimationComplete}
           onReturningDragStart={handleReturningDragStart}
           onReturningDragUpdate={handleReturningDragUpdate}
@@ -1071,6 +1183,77 @@ function GameView({
   );
 }
 
+function createOpponentPlacementAnimation(
+  input: Readonly<{
+    animationId: string;
+    move: FivesLegalMove;
+    tileCatalog: Readonly<Record<TileId, Tile>>;
+    anchors: readonly LayoutAnchor[];
+    cameraTransform: CameraTransform;
+    containerOffset: Point;
+    sourceRect: ScreenRect | null;
+  }>,
+): OpponentPlacementAnimation | null {
+  if (!input.sourceRect) {
+    return null;
+  }
+
+  const tile = input.tileCatalog[input.move.tileId];
+  if (!tile) {
+    return null;
+  }
+
+  const anchor = findLayoutAnchorForSide(input.anchors, input.move.side);
+  if (!anchor) {
+    return null;
+  }
+
+  const placementGeometry = projectPlacement(
+    tile,
+    anchor,
+    input.move.inwardTileSide,
+  );
+  const sourceVisual = createSourceDragTileVisual(input.sourceRect);
+  const destinationVisual = projectPlacedTileGeometryToDragVisual(
+    placementGeometry,
+    input.cameraTransform,
+    input.containerOffset,
+  );
+  const sourceCenter = getDragTileVisualCenter(sourceVisual);
+  const destinationCenter = getDragTileVisualCenter(destinationVisual);
+  const introTravelPx = Math.min(
+    OPPONENT_PLAY_INTRO_TRAVEL_PX,
+    Math.max(
+      0,
+      destinationCenter.y - sourceCenter.y - OPPONENT_PLAY_INTRO_CLEARANCE_PX,
+    ),
+  );
+  const introCenter = {
+    x: sourceCenter.x,
+    y:
+      introTravelPx > 0
+        ? sourceCenter.y + introTravelPx
+        : sourceCenter.y + (destinationCenter.y - sourceCenter.y) / 2,
+  };
+
+  return {
+    animationId: input.animationId,
+    tileId: tile.id,
+    value1: tile.sideA,
+    value2: tile.sideB,
+    from: sourceVisual,
+    via: createCenteredDragTileVisual(
+      introCenter,
+      "up",
+      destinationVisual.scale,
+    ),
+    to: destinationVisual,
+    targetRotationDeg: placementGeometry.rotationDeg,
+    flipIntroDurationMs: OPPONENT_PLAY_INTRO_DURATION_MS,
+    settleDurationMs: OPPONENT_PLAY_SETTLE_DURATION_MS,
+  };
+}
+
 const styles = StyleSheet.create((theme) => ({
   container: {
     flex: 1,
@@ -1087,6 +1270,14 @@ const styles = StyleSheet.create((theme) => ({
     zIndex: 5,
   },
   dragOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 25,
+  },
+  opponentDragOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 5,
+  },
+  playerDragOverlay: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 25,
   },
