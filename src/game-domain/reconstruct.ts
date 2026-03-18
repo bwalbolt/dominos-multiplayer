@@ -31,6 +31,7 @@ import type {
 import {
   calculateFivesBoardScore,
   calculateHandPipTotal,
+  evaluateRoundResolution,
   evaluateFivesLegalMoves,
   validateFivesRoundEndedEvent,
 } from "./variants/fives";
@@ -649,8 +650,42 @@ const applyRoundEndedEvent = (
   };
 };
 
+const finalizeRoundAtGameEnd = (
+  game: GameState,
+  tileCatalog: Record<TileId, Tile>,
+  event: GameEndedEvent,
+): RoundState | null => {
+  if (game.currentRound === null) {
+    return null;
+  }
+
+  assertRoundMatchesEvent(game.currentRound, event);
+
+  if (game.currentRound.endedAt !== null) {
+    return game.currentRound;
+  }
+
+  const result =
+    game.currentRound.result ??
+    (game.metadata.variant === "fives"
+      ? evaluateRoundResolution(game.currentRound, tileCatalog)
+      : null) ?? {
+      winnerPlayerId: event.winnerPlayerId,
+      reason: null,
+      scoreAwarded: 0,
+    };
+
+  return {
+    ...game.currentRound,
+    status: "completed",
+    result,
+    endedAt: event.occurredAt,
+  };
+};
+
 const applyGameEndedEvent = (
   game: GameState,
+  tileCatalog: Record<TileId, Tile>,
   event: GameEndedEvent,
 ): GameState => {
   const nextPlayerStateById: Record<PlayerId, PlayerMatchState> = {
@@ -674,6 +709,7 @@ const applyGameEndedEvent = (
     ...game,
     status: "completed",
     playerStateById: nextPlayerStateById,
+    currentRound: finalizeRoundAtGameEnd(game, tileCatalog, event),
     winnerPlayerId: event.winnerPlayerId,
     turn: null,
   };
@@ -917,7 +953,11 @@ const applyGameEventInternal = (
       );
       break;
     case "GAME_ENDED":
-      nextGame = applyGameEndedEvent(initializedGame, event);
+      nextGame = applyGameEndedEvent(
+        initializedGame,
+        accumulator.tileCatalog,
+        event,
+      );
       break;
     case "FORFEIT":
       nextGame = applyForfeitEvent(initializedGame, event);
