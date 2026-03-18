@@ -1,4 +1,5 @@
 import { DominoTile } from "@/components/domino/domino-tile";
+import { getDominoTileFrameSize } from "@/components/domino/domino-tile.utils";
 import { TileId } from "@/src/game-domain/types";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
@@ -24,6 +25,17 @@ import {
 import { createSourceDragTileVisual } from "./hand-drag-visual";
 
 const DROP_SETTLE_DURATION_MS = 160;
+const ACTIVE_DRAG_TILE_POSE = {
+  elevation: domino.dragElevation,
+  tiltXDeg: domino.dragTiltXDeg,
+  tiltYDeg: domino.dragTiltYDeg,
+} as const;
+const PLACEMENT_TILE_POSE = {
+  elevation: domino.previewElevation,
+} as const;
+const RETURNING_TILE_POSE = {
+  elevation: domino.dragElevation,
+} as const;
 
 interface HandDragOverlayProps {
   activeDrag: ActiveHandDrag | null;
@@ -76,6 +88,7 @@ export function HandDragOverlay({
             value2={activeDrag.value2}
             orientation={activeDragVisual.orientation}
             scale={activeDragVisual.scale}
+            pose={ACTIVE_DRAG_TILE_POSE}
           />
         </Animated.View>
       )}
@@ -162,6 +175,7 @@ function PlacementAnimationTile({
         value2={placement.value2}
         orientation={placement.to.orientation}
         scale={placement.to.scale}
+        pose={PLACEMENT_TILE_POSE}
       />
     </Animated.View>
   );
@@ -341,6 +355,7 @@ function ReturningDragTile({
           value2={drag.value2}
           orientation="up"
           scale={sourceVisual.scale}
+          pose={RETURNING_TILE_POSE}
         />
       </Animated.View>
     </GestureDetector>
@@ -377,13 +392,11 @@ function getRenderedTileSize(
   width: number;
   height: number;
 }> {
-  const isVertical = orientation === "up" || orientation === "down";
-  const tileWidth = isVertical ? domino.width : domino.height;
-  const tileHeight = isVertical ? domino.height : domino.width;
+  const frameSize = getDominoTileFrameSize(orientation, scale);
 
   return {
-    width: tileWidth * scale,
-    height: (tileHeight + 5) * scale,
+    width: frameSize.width,
+    height: frameSize.height,
   };
 }
 

@@ -1,186 +1,403 @@
-import React from "react";
-import { View } from "react-native";
+import React, { useId } from "react";
+import { Platform, View } from "react-native";
 import Svg, { ClipPath, Defs, G, Line, Path, Rect } from "react-native-svg";
-import { defaultPipAdapter } from "../../src/game-domain/presentation/pip-adapter";
-import { domino } from "../../theme/tokens";
-import { DominoTileProps } from "./domino-tile.types";
+import { StyleSheet } from "react-native-unistyles";
+
+import { defaultPipAdapter } from "@/src/game-domain/presentation/pip-adapter";
+import { FaceStyle } from "@/src/game-domain/presentation/tile-face";
+import { DominoPip } from "@/src/game-domain/types";
+import { domino } from "@/theme/tokens";
+
+import { DominoSelectionOutline } from "./DominoSelectionOutline";
 import {
-  DominoSelectionOutline,
-  DOMINO_SELECTION_OUTLINE_PADDING,
-} from "./DominoSelectionOutline";
+  buildDominoTileBevelHighlightPath,
+  buildDominoTileBevelLowlightPath,
+  buildDominoTileDepthPath,
+  clampDominoFlipProgress,
+  getDominoTileFaceOffsets,
+  getDominoTileMetrics,
+  getDominoTileRotationAngle,
+  resolveDominoTileOpacity,
+  resolveDominoTileRenderMode,
+  resolveDominoTileShadowOpacity,
+} from "./domino-tile.utils";
+import {
+  DominoTileRendererProps,
+  DominoOrientation,
+  DominoState,
+  DominoTileProps,
+  DominoTileRenderMode,
+  TileAppearance,
+  TilePose,
+} from "./domino-tile.types";
 import { FaceRenderer } from "./face-renderers";
 
+export const DOMINO_TILE_RENDERER_BACKEND =
+  Platform.OS === "web" || process.env.NODE_ENV === "test" ? "svg" : "skia";
+
+const dominoTileSkiaModule =
+  DOMINO_TILE_RENDERER_BACKEND === "skia"
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    ? (require("./domino-tile-skia") as typeof import("./domino-tile-skia"))
+    : null;
+
+type DominoTileHighlightShellProps = Readonly<{
+  orientation?: DominoOrientation;
+  state?: DominoState;
+  appearance?: TileAppearance;
+  pose?: TilePose;
+}>;
+
+type FacedownDominoTileProps = Readonly<{
+  orientation?: DominoOrientation;
+  appearance?: TileAppearance;
+  pose?: TilePose;
+}>;
+
 export const DominoTile = React.memo(function DominoTile({
+  scale = 1,
+  appearance,
+  pose,
+  ...rest
+}: DominoTileProps) {
+  return (
+    <DominoTileRenderer
+      {...rest}
+      appearance={{
+        ...appearance,
+        renderMode: appearance?.renderMode ?? "front",
+      }}
+      pose={{
+        ...pose,
+        scale: pose?.scale ?? scale,
+      }}
+    />
+  );
+});
+
+export const DominoTileHighlightShell = React.memo(function DominoTileHighlightShell({
+  orientation = "up",
+  state = "selected",
+  appearance,
+  pose,
+}: DominoTileHighlightShellProps) {
+  return (
+    <DominoTileRenderer
+      orientation={orientation}
+      state={state}
+      appearance={{
+        ...appearance,
+        renderMode: "shell",
+        showSelectionOutline:
+          appearance?.showSelectionOutline ?? state === "selected",
+      }}
+      pose={pose}
+    />
+  );
+});
+
+export const FacedownDominoTile = React.memo(function FacedownDominoTile({
+  orientation = "up",
+  appearance,
+  pose,
+}: FacedownDominoTileProps) {
+  return (
+    <DominoTileRenderer
+      orientation={orientation}
+      appearance={{
+        ...appearance,
+        renderMode: "back",
+      }}
+      pose={pose}
+    />
+  );
+});
+
+function DominoTileRenderer({
+  faceStyle = "pips",
+  ...props
+}: DominoTileRendererProps) {
+  const shouldUseSkia =
+    DOMINO_TILE_RENDERER_BACKEND === "skia" &&
+    dominoTileSkiaModule !== null &&
+    faceStyle === "pips";
+
+  if (shouldUseSkia) {
+    const { DominoTileSkiaRenderer } = dominoTileSkiaModule;
+    return <DominoTileSkiaRenderer {...props} faceStyle={faceStyle} />;
+  }
+
+  return <DominoTileSvgRenderer {...props} faceStyle={faceStyle} />;
+}
+
+function DominoTileSvgRenderer({
   value1,
   value2,
   orientation = "up",
   faceStyle = "pips",
-  scale = 1,
   state = "idle",
-}: DominoTileProps) {
-  const isVertical = orientation === "up" || orientation === "down";
-  const width = isVertical ? domino.width : domino.height;
-  const height = isVertical ? domino.height : domino.width;
-  const halfTileSize = domino.width; // 56
-
-  const glyph1 = defaultPipAdapter.getFaceGlyph(value1, faceStyle);
-  const glyph2 = defaultPipAdapter.getFaceGlyph(value2, faceStyle);
-
-  const isGhost = state === "ghost";
-  const isSelected = state === "selected";
-  const opacity = isGhost ? 0.5 : 1;
-
-  // Calculate face positions based on orientation
-  const face1 = { x: 0, y: 0 };
-  const face2 = { x: 0, y: 0 };
-
-  if (orientation === "up") {
-    face1.y = 0;
-    face2.y = halfTileSize;
-  } else if (orientation === "down") {
-    face1.y = halfTileSize;
-    face2.y = 0;
-  } else if (orientation === "left") {
-    face1.x = 0;
-    face2.x = halfTileSize;
-  } else if (orientation === "right") {
-    face1.x = halfTileSize;
-    face2.x = 0;
-  }
-
-  const rotationAngle =
-    {
-      up: 0,
-      right: 90,
-      down: 180,
-      left: 270,
-    }[orientation] ?? 0;
-
-  const dividerX1 = isVertical ? 2 : halfTileSize;
-  const dividerY1 = isVertical ? halfTileSize : 2;
-  const dividerX2 = isVertical ? width - 2 : halfTileSize;
-  const dividerY2 = isVertical ? halfTileSize : height - 2;
-
-  // Visual constants
-  const extension = 5;
-  const strokeWidth = 1;
-
-  // Account for glow padding (max 3px + shadow space)
-  const padding = DOMINO_SELECTION_OUTLINE_PADDING;
-  const offset = strokeWidth / 2 + padding;
-
-  const svgWidth = width + strokeWidth + padding * 2;
-  const svgHeight = height + extension + strokeWidth + padding * 2;
+  appearance,
+  pose,
+}: DominoTileRendererProps) {
+  const metrics = getDominoTileMetrics(orientation);
+  const clipPathId = useId().replace(/:/g, "_");
+  const scale = pose?.scale ?? 1;
+  const elevation = pose?.elevation ?? domino.idleElevation;
+  const flipProgress = clampDominoFlipProgress(pose?.flipProgress);
+  const renderMode = resolveDominoTileRenderMode(
+    appearance?.renderMode,
+    flipProgress,
+  );
+  const opacity = resolveDominoTileOpacity(state, appearance?.opacity);
+  const showShadow = appearance?.showShadow ?? true;
+  const showSelectionOutline =
+    appearance?.showSelectionOutline ?? state === "selected";
+  const rotateYDeg = (pose?.tiltYDeg ?? 0) + flipProgress * 180;
 
   return (
     <View
-      style={{
-        width: width * scale,
-        height: (height + extension) * scale,
-        opacity,
-      }}
+      style={[
+        styles.surface,
+        {
+          width: metrics.bodySize.width * scale,
+          height: metrics.frameSize.height * scale,
+          opacity,
+          shadowColor: domino.colors.shadow,
+          shadowOpacity: showShadow
+            ? resolveDominoTileShadowOpacity(
+                renderMode,
+                state,
+                pose?.shadowOpacity,
+              )
+            : 0,
+          shadowRadius: showShadow ? domino.shadowRadius + elevation : 0,
+          shadowOffset: {
+            width: domino.shadowOffsetX,
+            height: domino.shadowOffsetY + elevation,
+          },
+          elevation: showShadow ? elevation : 0,
+          transform: [
+            { perspective: domino.perspective },
+            { rotateX: `${pose?.tiltXDeg ?? 0}deg` },
+            { rotateY: `${rotateYDeg}deg` },
+          ],
+        },
+      ]}
     >
       <Svg
-        width={(width + padding * 2) * scale}
-        height={(height + extension + padding * 2) * scale}
-        viewBox={`${-offset} ${-offset} ${svgWidth} ${svgHeight}`}
-        style={{
-          position: "absolute",
-          left: -padding * scale,
-          top: -padding * scale,
-        }}
+        width={(metrics.bodySize.width + metrics.padding * 2) * scale}
+        height={(metrics.frameSize.height + metrics.padding * 2) * scale}
+        viewBox={`${-metrics.svgOffset} ${-metrics.svgOffset} ${metrics.svgWidth} ${metrics.svgHeight}`}
+        style={[
+          styles.svgSurface,
+          {
+            left: -metrics.padding * scale,
+            top: -metrics.padding * scale,
+          },
+        ]}
       >
         <Defs>
-          <ClipPath id="tileBodyClip">
+          <ClipPath id={clipPathId}>
             <Rect
               x={0}
               y={0}
-              width={width}
-              height={height}
+              width={metrics.bodySize.width}
+              height={metrics.bodySize.height}
               rx={domino.borderRadius}
               ry={domino.borderRadius}
             />
           </ClipPath>
         </Defs>
 
-        {/* Bottom edge shadow/perspective */}
-        <Path
-          d={`
-            M 0,${height - domino.borderRadius}
-            V ${height + extension - domino.borderRadius}
-            Q 0,${height + extension} ${domino.borderRadius},${height + extension}
-            H ${width - domino.borderRadius}
-            Q ${width},${height + extension} ${width},${height + extension - domino.borderRadius}
-            V ${height - domino.borderRadius}
-          `}
-          fill={domino.colors.bottomEdge}
-          stroke={domino.colors.bottomEdgeStroke}
-          strokeWidth={strokeWidth}
-          strokeLinejoin="round"
-        />
+        <TileDepth metrics={metrics} renderMode={renderMode} />
 
-        {/* Tile Body Wrapper for Clipping */}
-        <G clipPath="url(#tileBodyClip)">
-          {/* Tile Body Fill */}
+        <G clipPath={`url(#${clipPathId})`}>
           <Rect
             x={0}
             y={0}
-            width={width}
-            height={height}
+            width={metrics.bodySize.width}
+            height={metrics.bodySize.height}
             fill={domino.colors.body}
+            fillOpacity={renderMode === "shell" ? domino.shellBodyOpacity : 1}
           />
 
-          {/* Divider */}
-          <Line
-            x1={dividerX1}
-            y1={dividerY1}
-            x2={dividerX2}
-            y2={dividerY2}
-            stroke={domino.colors.divider}
-            strokeWidth={strokeWidth}
-          />
+          <TileBevel metrics={metrics} renderMode={renderMode} />
 
-          {/* Face 1 */}
-          <FaceRenderer
-            glyph={glyph1}
-            x={face1.x}
-            y={face1.y}
-            rotationAngle={rotationAngle}
-            faceSize={halfTileSize}
-          />
-
-          {/* Face 2 */}
-          <FaceRenderer
-            glyph={glyph2}
-            x={face2.x}
-            y={face2.y}
-            rotationAngle={rotationAngle}
-            faceSize={halfTileSize}
-          />
+          {renderMode !== "back" && (
+            <TileFrontSurface
+              value1={value1}
+              value2={value2}
+              faceStyle={faceStyle}
+              orientation={orientation}
+              renderMode={renderMode}
+              metrics={metrics}
+            />
+          )}
         </G>
 
-        {/* Tile Body Outer Stroke */}
         <Rect
           x={0}
           y={0}
-          width={width}
-          height={height}
+          width={metrics.bodySize.width}
+          height={metrics.bodySize.height}
           rx={domino.borderRadius}
           ry={domino.borderRadius}
           fill="none"
           stroke={domino.colors.divider}
-          strokeWidth={strokeWidth}
+          strokeWidth={metrics.strokeWidth}
         />
 
-        {/* Selected Overlay (Glow in front) */}
-        {isSelected && (
+        {showSelectionOutline && (
           <DominoSelectionOutline
-            width={width}
-            height={height}
+            width={metrics.bodySize.width}
+            height={metrics.bodySize.height}
             borderRadius={domino.borderRadius}
+            stroke={appearance?.outlineStroke ?? domino.colors.selection}
           />
         )}
       </Svg>
     </View>
   );
-});
+}
+
+function TileDepth({
+  metrics,
+  renderMode,
+}: Readonly<{
+  metrics: ReturnType<typeof getDominoTileMetrics>;
+  renderMode: DominoTileRenderMode;
+}>) {
+  return (
+    <Path
+      d={buildDominoTileDepthPath(
+        0,
+        0,
+        metrics.bodySize.width,
+        metrics.bodySize.height,
+        metrics.depthOffset,
+        domino.borderRadius,
+      )}
+      fill={domino.colors.bottomEdge}
+      fillOpacity={renderMode === "shell" ? domino.shellDepthOpacity : 1}
+      stroke={domino.colors.bottomEdgeStroke}
+      strokeOpacity={renderMode === "shell" ? domino.shellDepthOpacity : 1}
+      strokeWidth={metrics.strokeWidth}
+      strokeLinejoin="round"
+    />
+  );
+}
+
+function TileBevel({
+  metrics,
+  renderMode,
+}: Readonly<{
+  metrics: ReturnType<typeof getDominoTileMetrics>;
+  renderMode: DominoTileRenderMode;
+}>) {
+  const inset = domino.bevelInset;
+  const innerWidth = metrics.bodySize.width - inset * 2;
+  const opacity = renderMode === "shell" ? domino.shellBodyOpacity : 1;
+
+  return (
+    <>
+      <Rect
+        x={inset}
+        y={inset}
+        width={innerWidth}
+        height={domino.faceHighlightHeight}
+        fill={domino.colors.faceHighlight}
+        fillOpacity={opacity}
+      />
+      <Path
+        d={buildDominoTileBevelHighlightPath(
+          0,
+          0,
+          metrics.bodySize.width,
+          metrics.bodySize.height,
+          inset,
+        )}
+        fill="none"
+        stroke={domino.colors.bevelHighlight}
+        strokeOpacity={opacity}
+        strokeWidth={metrics.strokeWidth}
+        strokeLinejoin="round"
+      />
+      <Path
+        d={buildDominoTileBevelLowlightPath(
+          0,
+          0,
+          metrics.bodySize.width,
+          metrics.bodySize.height,
+          inset,
+        )}
+        fill="none"
+        stroke={domino.colors.bevelLowlight}
+        strokeOpacity={opacity}
+        strokeWidth={metrics.strokeWidth}
+        strokeLinejoin="round"
+      />
+    </>
+  );
+}
+
+function TileFrontSurface({
+  value1,
+  value2,
+  faceStyle,
+  orientation,
+  renderMode,
+  metrics,
+}: Readonly<{
+  value1?: DominoPip;
+  value2?: DominoPip;
+  faceStyle: FaceStyle;
+  orientation: DominoOrientation;
+  renderMode: DominoTileRenderMode;
+  metrics: ReturnType<typeof getDominoTileMetrics>;
+}>) {
+  const [face1, face2] = getDominoTileFaceOffsets(orientation);
+  const rotationAngle = getDominoTileRotationAngle(orientation);
+  const showGlyphs = renderMode === "front" && value1 !== undefined && value2 !== undefined;
+
+  return (
+    <>
+      <Line
+        x1={metrics.divider.x1}
+        y1={metrics.divider.y1}
+        x2={metrics.divider.x2}
+        y2={metrics.divider.y2}
+        stroke={domino.colors.divider}
+        strokeOpacity={renderMode === "shell" ? domino.shellDividerOpacity : 1}
+        strokeWidth={metrics.strokeWidth}
+      />
+
+      {showGlyphs && (
+        <>
+          <FaceRenderer
+            glyph={defaultPipAdapter.getFaceGlyph(value1, faceStyle)}
+            x={face1.x}
+            y={face1.y}
+            rotationAngle={rotationAngle}
+            faceSize={metrics.halfFaceSize}
+          />
+          <FaceRenderer
+            glyph={defaultPipAdapter.getFaceGlyph(value2, faceStyle)}
+            x={face2.x}
+            y={face2.y}
+            rotationAngle={rotationAngle}
+            faceSize={metrics.halfFaceSize}
+          />
+        </>
+      )}
+    </>
+  );
+}
+
+const styles = StyleSheet.create(() => ({
+  surface: {
+    overflow: "visible",
+  },
+  svgSurface: {
+    position: "absolute",
+  },
+}));

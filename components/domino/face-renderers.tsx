@@ -52,8 +52,8 @@ export const FaceRenderer: React.FC<FaceRendererProps> = ({
       <G transform={`translate(${x}, ${y})`} opacity={opacity}>
         <SvgText
           x={center}
-          y={center + 6} // Subtle offset for vertical centering
-          fontSize={24}
+          y={center + domino.numeralVerticalOffset}
+          fontSize={domino.numeralFontSize}
           fontWeight="900"
           fill={domino.colors.pips}
           textAnchor="middle"

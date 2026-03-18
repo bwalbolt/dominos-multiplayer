@@ -8,11 +8,11 @@ import Animated, {
 } from "react-native-reanimated";
 import { Rect } from "react-native-svg";
 
-import { colors, domino, spacing } from "@/theme/tokens";
+import { domino } from "@/theme/tokens";
 
 const AnimatedRect = Animated.createAnimatedComponent(Rect);
 
-export const DOMINO_SELECTION_OUTLINE_PADDING = spacing[4] + spacing[2];
+export const DOMINO_SELECTION_OUTLINE_PADDING = domino.outlinePadding;
 
 type DominoSelectionOutlineProps = Readonly<{
   width: number;
@@ -29,14 +29,14 @@ export function DominoSelectionOutline({
   x = 0,
   y = 0,
   borderRadius = domino.borderRadius,
-  stroke = colors.blue,
+  stroke = domino.colors.selection,
 }: DominoSelectionOutlineProps) {
   const glowOffset = useSharedValue(0);
 
   useEffect(() => {
     glowOffset.value = withRepeat(
-      withTiming(3, {
-        duration: 900,
+      withTiming(domino.selectionPulseOffset, {
+        duration: domino.selectionPulseDurationMs,
         easing: Easing.inOut(Easing.ease),
       }),
       -1,
@@ -53,7 +53,9 @@ export function DominoSelectionOutline({
     y: y - glowOffset.value,
     width: width + glowOffset.value * 2,
     height: height + glowOffset.value * 2,
-    strokeWidth: 1.5 + glowOffset.value * 0.5,
+    strokeWidth:
+      domino.selectionStrokeWidth +
+      glowOffset.value * domino.selectionStrokeWidthGain,
     rx: borderRadius + glowOffset.value,
     ry: borderRadius + glowOffset.value,
     opacity: 1,

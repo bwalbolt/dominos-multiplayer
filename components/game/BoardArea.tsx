@@ -7,14 +7,12 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from "react-native-reanimated";
-import Svg from "react-native-svg";
 import { StyleSheet } from "react-native-unistyles";
 
 import {
-  DominoSelectionOutline,
-  DOMINO_SELECTION_OUTLINE_PADDING,
-} from "@/components/domino/DominoSelectionOutline";
-import { DominoTile } from "@/components/domino/domino-tile";
+  DominoTile,
+  DominoTileHighlightShell,
+} from "@/components/domino/domino-tile";
 import { DominoOrientation } from "@/components/domino/domino-tile.types";
 import {
   BoardLayoutTransitionPlan,
@@ -31,7 +29,7 @@ import {
   Point,
 } from "@/src/game-domain/layout/types";
 import { BoardState } from "@/src/game-domain/types";
-import { spacing } from "@/theme/tokens";
+import { domino, spacing } from "@/theme/tokens";
 
 const BOARD_LAYOUT_TRANSITION_DURATION_MS = 320;
 const ANCHOR_SIZE = spacing[8];
@@ -39,6 +37,9 @@ const ANCHOR_RADIUS = ANCHOR_SIZE / 2;
 const SNAP_HIGHLIGHT_Z_INDEX = 220;
 const ANCHOR_Z_INDEX = 160;
 const PREVIEW_TILE_Z_INDEX = 200;
+const BOARD_TILE_POSE = { elevation: domino.idleElevation } as const;
+const PREVIEW_TILE_POSE = { elevation: domino.previewElevation } as const;
+const SNAP_HIGHLIGHT_POSE = { elevation: domino.previewElevation } as const;
 
 type BoardSnapshot = Readonly<{
   board: BoardState;
@@ -108,6 +109,17 @@ export const BoardArea: React.FC<BoardAreaProps> = ({
           })
         : null,
     [highlightedAnchor, highlightedTileIsDouble, isTransitionActive],
+  );
+  const highlightedShellOrientation = useMemo(
+    () =>
+      highlightedOpenSlot
+        ? resolvePreviewShellOrientation(
+            highlightedOpenSlot.visualDirection,
+            highlightedTileIsDouble,
+            highlightedAnchor,
+          )
+        : null,
+    [highlightedAnchor, highlightedOpenSlot, highlightedTileIsDouble],
   );
   const worldStyle = useAnimatedStyle(() => ({
     transform: [
@@ -225,6 +237,8 @@ export const BoardArea: React.FC<BoardAreaProps> = ({
                 value1={previewTile.value1}
                 value2={previewTile.value2}
                 orientation={rotationDegToOrientation(previewTile.rotationDeg)}
+                state="ghost"
+                pose={PREVIEW_TILE_POSE}
               />
             </View>
           )}
@@ -235,43 +249,17 @@ export const BoardArea: React.FC<BoardAreaProps> = ({
               style={[
                 styles.snapHighlightWrapper,
                 {
-                  left:
-                    highlightedOpenSlot.rect.x -
-                    DOMINO_SELECTION_OUTLINE_PADDING,
-                  top:
-                    highlightedOpenSlot.rect.y -
-                    DOMINO_SELECTION_OUTLINE_PADDING,
-                  width:
-                    highlightedOpenSlot.rect.width +
-                    DOMINO_SELECTION_OUTLINE_PADDING * 2,
-                  height:
-                    highlightedOpenSlot.rect.height +
-                    DOMINO_SELECTION_OUTLINE_PADDING * 2,
+                  left: highlightedOpenSlot.rect.x,
+                  top: highlightedOpenSlot.rect.y,
                 },
               ]}
             >
-              <Svg
-                width={
-                  highlightedOpenSlot.rect.width +
-                  DOMINO_SELECTION_OUTLINE_PADDING * 2
-                }
-                height={
-                  highlightedOpenSlot.rect.height +
-                  DOMINO_SELECTION_OUTLINE_PADDING * 2
-                }
-                viewBox={`-${DOMINO_SELECTION_OUTLINE_PADDING} -${DOMINO_SELECTION_OUTLINE_PADDING} ${
-                  highlightedOpenSlot.rect.width +
-                  DOMINO_SELECTION_OUTLINE_PADDING * 2
-                } ${
-                  highlightedOpenSlot.rect.height +
-                  DOMINO_SELECTION_OUTLINE_PADDING * 2
-                }`}
-              >
-                <DominoSelectionOutline
-                  width={highlightedOpenSlot.rect.width}
-                  height={highlightedOpenSlot.rect.height}
-                />
-              </Svg>
+              <DominoTileHighlightShell
+                key={`${highlightedOpenSlot.rect.x}:${highlightedOpenSlot.rect.y}:${highlightedOpenSlot.rect.width}:${highlightedOpenSlot.rect.height}:${highlightedShellOrientation}`}
+                orientation={highlightedShellOrientation ?? "up"}
+                appearance={{ showSelectionOutline: false }}
+                pose={SNAP_HIGHLIGHT_POSE}
+              />
             </View>
           )}
           {visibleAnchors.map((anchor) => (
@@ -325,6 +313,7 @@ const AnimatedBoardTile = React.memo(function AnimatedBoardTile({
         value1={plan.from.value1}
         value2={plan.from.value2}
         orientation={baseOrientation}
+        pose={BOARD_TILE_POSE}
       />
     </Animated.View>
   );
@@ -346,6 +335,26 @@ function rotationDegToOrientation(rotationDeg: number): DominoOrientation {
   }
 
   return "up";
+}
+
+function resolvePreviewShellOrientation(
+  visualDirection: DominoOrientation,
+  isDouble: boolean,
+  highlightedAnchor?: LayoutAnchor | null,
+): DominoOrientation {
+  if (!isDouble) {
+    return visualDirection;
+  }
+
+  if (highlightedAnchor?.ownerTileId === null && highlightedAnchor.id === "initial") {
+    return "up";
+  }
+
+  if (visualDirection === "left" || visualDirection === "right") {
+    return "up";
+  }
+
+  return "right";
 }
 
 function getAnimatedTileCenter(

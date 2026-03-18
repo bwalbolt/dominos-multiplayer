@@ -8,12 +8,17 @@ import { StyleSheet } from "react-native-unistyles";
 
 import { DominoTile } from "../domino/domino-tile";
 import { resolveHandPanIntent } from "./hand-pan-intent";
-import { TileId } from "@/src/game-domain/types";
+import { DominoPip, TileId } from "@/src/game-domain/types";
+import { domino } from "@/theme/tokens";
+
+const HAND_TILE_POSE = {
+  elevation: domino.handElevation,
+} as const;
 
 interface DraggableHandTileProps {
   tileId: TileId;
-  value1: number;
-  value2: number;
+  value1: DominoPip;
+  value2: DominoPip;
   isPlayable?: boolean;
   isHidden: boolean;
   isInteractionEnabled: boolean;
@@ -127,10 +132,11 @@ export const DraggableHandTile: React.FC<DraggableHandTileProps> = ({
     <GestureDetector gesture={panGesture}>
       <Animated.View style={[styles.tile, isHidden && styles.hiddenTile]}>
         <DominoTile
-          value1={value1 as any}
-          value2={value2 as any}
+          value1={value1}
+          value2={value2}
           orientation="up"
           scale={0.85}
+          pose={HAND_TILE_POSE}
         />
       </Animated.View>
     </GestureDetector>

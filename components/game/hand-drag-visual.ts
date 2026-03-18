@@ -1,12 +1,14 @@
 import { DominoOrientation } from "@/components/domino/domino-tile.types";
+import { getDominoTileBodySize } from "@/components/domino/domino-tile.utils";
 import {
   CameraTransform,
   PlacedTileGeometry,
   Point,
 } from "@/src/game-domain/layout/types";
-import { domino } from "@/theme/tokens";
 
 import { DragTileVisual, ScreenRect } from "./hand-drag.types";
+
+const DEFAULT_HAND_TILE_BODY_SIZE = getDominoTileBodySize("up");
 
 type ResolveDraggedTileVisualInput = Readonly<{
   sourceRect: ScreenRect;
@@ -22,7 +24,7 @@ export function createSourceDragTileVisual(sourceRect: ScreenRect): DragTileVisu
   return {
     left: sourceRect.x,
     top: sourceRect.y,
-    scale: sourceRect.width / domino.width,
+    scale: sourceRect.width / DEFAULT_HAND_TILE_BODY_SIZE.width,
     orientation: "up",
   };
 }
@@ -67,7 +69,7 @@ export function resolveDraggedTileVisual(
   return {
     left: input.dragScreenPosition.x - input.sourceRect.width / 2,
     top: input.dragScreenPosition.y - input.sourceRect.height / 2,
-    scale: input.sourceRect.width / domino.width,
+    scale: input.sourceRect.width / DEFAULT_HAND_TILE_BODY_SIZE.width,
     orientation: "up",
   };
 }
