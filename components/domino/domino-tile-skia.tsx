@@ -18,6 +18,7 @@ import { DominoTileRendererProps, DominoTileRenderMode } from "./domino-tile.typ
 import {
   buildDominoTileBevelHighlightPath,
   buildDominoTileBevelLowlightPath,
+  buildDominoTileDepthFillPath,
   buildDominoTileDepthPath,
   clampDominoFlipProgress,
   getDominoTileFaceOffsets,
@@ -117,7 +118,7 @@ export function DominoTileSkiaRenderer({
         )}
 
         <Path
-          path={buildDominoTileDepthPath(
+          path={buildDominoTileDepthFillPath(
             bodyX,
             bodyY,
             bodyWidth,
@@ -127,6 +128,7 @@ export function DominoTileSkiaRenderer({
           )}
           color={domino.colors.bottomEdge}
           opacity={renderMode === "shell" ? domino.shellDepthOpacity : 1}
+          fillType="evenOdd"
         />
         <Path
           path={buildDominoTileDepthPath(

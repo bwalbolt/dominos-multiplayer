@@ -208,6 +208,55 @@ export function buildDominoTileDepthPath(
   `;
 }
 
+export function buildDominoTileDepthOverlapPath(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  borderRadius: number,
+): string {
+  const clampedRadius = Math.max(
+    0,
+    Math.min(borderRadius, width / 2, height / 2),
+  );
+
+  return `
+    M ${x},${y + height - clampedRadius}
+    Q ${x},${y + height} ${x + clampedRadius},${y + height}
+    H ${x + width - clampedRadius}
+    Q ${x + width},${y + height} ${x + width},${y + height - clampedRadius}
+    H ${x}
+    Z
+  `;
+}
+
+export function buildDominoTileDepthFillPath(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  depthOffset: number,
+  borderRadius: number,
+): string {
+  return `
+    ${buildDominoTileDepthPath(
+      x,
+      y,
+      width,
+      height,
+      depthOffset,
+      borderRadius,
+    )} Z
+    ${buildDominoTileDepthOverlapPath(
+      x,
+      y,
+      width,
+      height,
+      borderRadius,
+    )}
+  `;
+}
+
 export function buildDominoTileBevelHighlightPath(
   x: number,
   y: number,

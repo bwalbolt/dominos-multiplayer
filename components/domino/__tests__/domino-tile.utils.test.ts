@@ -1,6 +1,7 @@
 import { domino } from "@/theme/tokens";
 
 import {
+  buildDominoTileDepthFillPath,
   clampDominoFlipProgress,
   getDominoTileBodySize,
   getDominoTileFrameSize,
@@ -25,5 +26,22 @@ describe("domino-tile.utils", () => {
     expect(clampDominoFlipProgress(-1)).toBe(0);
     expect(clampDominoFlipProgress(0.5)).toBe(0.5);
     expect(clampDominoFlipProgress(2)).toBe(1);
+  });
+
+  it("cuts the faux depth fill out of the tile body silhouette", () => {
+    const path = buildDominoTileDepthFillPath(
+      0,
+      0,
+      domino.width,
+      domino.height,
+      domino.depthOffset,
+      domino.borderRadius,
+    ).replace(/\s+/g, " ");
+
+    expect(path).toContain(`V ${domino.height + domino.depthOffset - domino.borderRadius}`);
+    expect(path).toContain(`H ${domino.width - domino.borderRadius}`);
+    expect(path).toContain(`M 0,${domino.height - domino.borderRadius}`);
+    expect(path).toContain(`Q 0,${domino.height} ${domino.borderRadius},${domino.height}`);
+    expect(path).toContain(`Q ${domino.width},${domino.height} ${domino.width},${domino.height - domino.borderRadius}`);
   });
 });

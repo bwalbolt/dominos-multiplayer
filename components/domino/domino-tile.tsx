@@ -12,6 +12,7 @@ import { DominoSelectionOutline } from "./DominoSelectionOutline";
 import {
   buildDominoTileBevelHighlightPath,
   buildDominoTileBevelLowlightPath,
+  buildDominoTileDepthFillPath,
   buildDominoTileDepthPath,
   clampDominoFlipProgress,
   getDominoTileFaceOffsets,
@@ -268,22 +269,36 @@ function TileDepth({
   renderMode: DominoTileRenderMode;
 }>) {
   return (
-    <Path
-      d={buildDominoTileDepthPath(
-        0,
-        0,
-        metrics.bodySize.width,
-        metrics.bodySize.height,
-        metrics.depthOffset,
-        domino.borderRadius,
-      )}
-      fill={domino.colors.bottomEdge}
-      fillOpacity={renderMode === "shell" ? domino.shellDepthOpacity : 1}
-      stroke={domino.colors.bottomEdgeStroke}
-      strokeOpacity={renderMode === "shell" ? domino.shellDepthOpacity : 1}
-      strokeWidth={metrics.strokeWidth}
-      strokeLinejoin="round"
-    />
+    <>
+      <Path
+        d={buildDominoTileDepthFillPath(
+          0,
+          0,
+          metrics.bodySize.width,
+          metrics.bodySize.height,
+          metrics.depthOffset,
+          domino.borderRadius,
+        )}
+        fill={domino.colors.bottomEdge}
+        fillOpacity={renderMode === "shell" ? domino.shellDepthOpacity : 1}
+        fillRule="evenodd"
+      />
+      <Path
+        d={buildDominoTileDepthPath(
+          0,
+          0,
+          metrics.bodySize.width,
+          metrics.bodySize.height,
+          metrics.depthOffset,
+          domino.borderRadius,
+        )}
+        fill="none"
+        stroke={domino.colors.bottomEdgeStroke}
+        strokeOpacity={renderMode === "shell" ? domino.shellDepthOpacity : 1}
+        strokeWidth={metrics.strokeWidth}
+        strokeLinejoin="round"
+      />
+    </>
   );
 }
 
