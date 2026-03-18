@@ -7,8 +7,13 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from "react-native-reanimated";
+import Svg from "react-native-svg";
 import { StyleSheet } from "react-native-unistyles";
 
+import {
+  DominoSelectionOutline,
+  DOMINO_SELECTION_OUTLINE_PADDING,
+} from "@/components/domino/DominoSelectionOutline";
 import { DominoTile } from "@/components/domino/domino-tile";
 import { DominoOrientation } from "@/components/domino/domino-tile.types";
 import {
@@ -18,6 +23,7 @@ import {
   TileTransitionPlan,
 } from "@/src/game-domain/layout/animation-plan";
 import { computeBoardTileStackOrder } from "@/src/game-domain/layout/board-depth";
+import { createOpenSlotFromAnchor } from "@/src/game-domain/layout/open-slot";
 import {
   BoardLayoutSolution,
   LayoutAnchor,
@@ -28,11 +34,9 @@ import { BoardState } from "@/src/game-domain/types";
 import { spacing } from "@/theme/tokens";
 
 const BOARD_LAYOUT_TRANSITION_DURATION_MS = 320;
-const SNAP_HIGHLIGHT_SIZE = spacing[16];
-const SNAP_HIGHLIGHT_RADIUS = SNAP_HIGHLIGHT_SIZE / 2;
 const ANCHOR_SIZE = spacing[8];
 const ANCHOR_RADIUS = ANCHOR_SIZE / 2;
-const SNAP_HIGHLIGHT_Z_INDEX = 150;
+const SNAP_HIGHLIGHT_Z_INDEX = 220;
 const ANCHOR_Z_INDEX = 160;
 const PREVIEW_TILE_Z_INDEX = 200;
 
@@ -44,7 +48,7 @@ type BoardSnapshot = Readonly<{
 interface BoardAreaProps {
   board: BoardState;
   layout: BoardLayoutSolution;
-  activeSnap?: LayoutAnchor | null;
+  highlightedAnchor?: LayoutAnchor | null;
   previewTile?: PlacedTileGeometry | null;
   onTransitionActiveChange?: (isActive: boolean) => void;
 }
@@ -52,7 +56,7 @@ interface BoardAreaProps {
 export const BoardArea: React.FC<BoardAreaProps> = ({
   board,
   layout,
-  activeSnap,
+  highlightedAnchor,
   previewTile,
   onTransitionActiveChange,
 }) => {
@@ -89,8 +93,17 @@ export const BoardArea: React.FC<BoardAreaProps> = ({
   const cameraTo = activeTransition?.plan.cameraTo ?? layout.camera;
   const visibleAnchors = useMemo(
     () =>
-      layout.geometry.anchors.filter((anchor) => anchor.ownerTileId !== null),
-    [layout.geometry.anchors],
+      isTransitionActive
+        ? []
+        : layout.geometry.anchors.filter((anchor) => anchor.ownerTileId !== null),
+    [isTransitionActive, layout.geometry.anchors],
+  );
+  const highlightedOpenSlot = useMemo(
+    () =>
+      !isTransitionActive && highlightedAnchor
+        ? createOpenSlotFromAnchor(highlightedAnchor)
+        : null,
+    [highlightedAnchor, isTransitionActive],
   );
   const worldStyle = useAnimatedStyle(() => ({
     transform: [
@@ -212,16 +225,50 @@ export const BoardArea: React.FC<BoardAreaProps> = ({
             </View>
           )}
 
-          {activeSnap && activeSnap.ownerTileId !== null && (
+          {highlightedOpenSlot && (
             <View
+              pointerEvents="none"
               style={[
-                styles.snapHighlight,
+                styles.snapHighlightWrapper,
                 {
-                  left: activeSnap.attachmentPoint.x - SNAP_HIGHLIGHT_RADIUS,
-                  top: activeSnap.attachmentPoint.y - SNAP_HIGHLIGHT_RADIUS,
+                  left:
+                    highlightedOpenSlot.rect.x -
+                    DOMINO_SELECTION_OUTLINE_PADDING,
+                  top:
+                    highlightedOpenSlot.rect.y -
+                    DOMINO_SELECTION_OUTLINE_PADDING,
+                  width:
+                    highlightedOpenSlot.rect.width +
+                    DOMINO_SELECTION_OUTLINE_PADDING * 2,
+                  height:
+                    highlightedOpenSlot.rect.height +
+                    DOMINO_SELECTION_OUTLINE_PADDING * 2,
                 },
               ]}
-            />
+            >
+              <Svg
+                width={
+                  highlightedOpenSlot.rect.width +
+                  DOMINO_SELECTION_OUTLINE_PADDING * 2
+                }
+                height={
+                  highlightedOpenSlot.rect.height +
+                  DOMINO_SELECTION_OUTLINE_PADDING * 2
+                }
+                viewBox={`-${DOMINO_SELECTION_OUTLINE_PADDING} -${DOMINO_SELECTION_OUTLINE_PADDING} ${
+                  highlightedOpenSlot.rect.width +
+                  DOMINO_SELECTION_OUTLINE_PADDING * 2
+                } ${
+                  highlightedOpenSlot.rect.height +
+                  DOMINO_SELECTION_OUTLINE_PADDING * 2
+                }`}
+              >
+                <DominoSelectionOutline
+                  width={highlightedOpenSlot.rect.width}
+                  height={highlightedOpenSlot.rect.height}
+                />
+              </Svg>
+            </View>
           )}
           {visibleAnchors.map((anchor) => (
             <View
@@ -241,7 +288,7 @@ export const BoardArea: React.FC<BoardAreaProps> = ({
   );
 };
 
-function AnimatedBoardTile({
+const AnimatedBoardTile = React.memo(function AnimatedBoardTile({
   plan,
   progress,
   zIndex,
@@ -277,7 +324,7 @@ function AnimatedBoardTile({
       />
     </Animated.View>
   );
-}
+});
 
 function rotationDegToOrientation(rotationDeg: number): DominoOrientation {
   const normalizedRotation = normalizeDegrees(rotationDeg);
@@ -418,13 +465,8 @@ const styles = StyleSheet.create((theme) => ({
     opacity: 0.3,
     zIndex: ANCHOR_Z_INDEX,
   },
-  snapHighlight: {
+  snapHighlightWrapper: {
     position: "absolute",
-    width: SNAP_HIGHLIGHT_SIZE,
-    height: SNAP_HIGHLIGHT_SIZE,
-    borderRadius: SNAP_HIGHLIGHT_RADIUS,
-    backgroundColor: theme.colors.blue,
-    opacity: 0.2,
     zIndex: SNAP_HIGHLIGHT_Z_INDEX,
   },
 }));

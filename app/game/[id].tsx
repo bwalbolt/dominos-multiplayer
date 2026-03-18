@@ -19,6 +19,7 @@ import {
   ActiveHandDrag,
   DragTileVisual,
   HandTileDragStart,
+  PlacementTileAnimation,
   ReturningHandDrag,
   ScreenPoint,
 } from "@/components/game/hand-drag.types";
@@ -56,6 +57,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 import { StyleSheet } from "react-native-unistyles";
+
+const DROP_SETTLE_PAUSE_MS = 100;
 
 export default function GameScreen() {
   const { id, opponentName } = useLocalSearchParams<{
@@ -125,6 +128,8 @@ function GameView({
   const currentRound = game.currentRound!;
   const isScreenFocused = useIsFocused();
   const [isBoardTransitionActive, setIsBoardTransitionActive] = useState(false);
+  const [placementAnimation, setPlacementAnimation] =
+    useState<PlacementTileAnimation | null>(null);
 
   const { playerHandIds, playerHand } = useMemo(() => {
     const ids = currentRound.handsByPlayerId[player1Id]?.tileIds || [];
@@ -143,7 +148,10 @@ function GameView({
   }, [currentRound.board]);
   const isPlayerTurn = game.turn?.activePlayerId === player1Id;
   const isBoardInteractionEnabled =
-    isPlayerTurn && isScreenFocused && !isBoardTransitionActive;
+    isPlayerTurn &&
+    isScreenFocused &&
+    !isBoardTransitionActive &&
+    placementAnimation === null;
 
   const opponentProfile = game.players.find(
     (p: any) => p.playerId === player2Id,
@@ -163,7 +171,9 @@ function GameView({
   }, [currentRound, playerHandIds, tileCatalog]);
 
   const {
-    activeSnap,
+    snapAnchor,
+    dropTargetAnchor,
+    hasClearedHandThreshold,
     dragScreenPosition,
     previewGeometry,
     onDragStart,
@@ -208,6 +218,11 @@ function GameView({
   const returningHandDragsRef = useRef<ReturningHandDrag[]>([]);
   const currentDragVisualRef = useRef<DragTileVisual | null>(null);
   const nextReturnIdRef = useRef(0);
+  const nextPlacementIdRef = useRef(0);
+  const pendingPlacementEventRef = useRef<TilePlayedEvent | null>(null);
+  const placementPauseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const currentDragVisual = useMemo(() => {
     if (!activeHandDrag) {
       return null;
@@ -220,19 +235,23 @@ function GameView({
       previewGeometry,
       cameraTransform: transform,
       containerOffset,
-      isSnapped: activeSnap !== null,
+      isSnapped: snapAnchor !== null,
     });
   }, [
     activeHandDrag,
-    activeSnap,
+    snapAnchor,
     containerOffset,
     dragScreenPosition,
     previewGeometry,
     transform,
   ]);
   const hiddenTileIds = useMemo(
-    () => getHiddenHandTileIds(activeHandDrag, returningHandDrags),
-    [activeHandDrag, returningHandDrags],
+    () =>
+      new Set([
+        ...getHiddenHandTileIds(activeHandDrag, returningHandDrags),
+        ...(placementAnimation ? [placementAnimation.tileId] : []),
+      ]),
+    [activeHandDrag, placementAnimation, returningHandDrags],
   );
   const usesVerticalDragActivation = playerHand.length >= 8;
 
@@ -248,13 +267,24 @@ function GameView({
     activeHandDragRef.current = null;
     returningHandDragsRef.current = [];
     currentDragVisualRef.current = null;
+    pendingPlacementEventRef.current = null;
+    if (placementPauseTimeoutRef.current) {
+      clearTimeout(placementPauseTimeoutRef.current);
+      placementPauseTimeoutRef.current = null;
+    }
     setActiveHandDrag(null);
+    setPlacementAnimation(null);
     setReturningHandDrags([]);
   }, [isScreenFocused]);
 
   const createNextReturnId = useCallback(() => {
     nextReturnIdRef.current += 1;
     return `return-${nextReturnIdRef.current}`;
+  }, []);
+
+  const createNextPlacementId = useCallback(() => {
+    nextPlacementIdRef.current += 1;
+    return `placement-${nextPlacementIdRef.current}`;
   }, []);
 
   const handleDraw = useCallback(() => {
@@ -311,7 +341,7 @@ function GameView({
       activeHandDragRef.current = nextActiveDrag;
       currentDragVisualRef.current = nextActiveDrag.initialVisual;
       setActiveHandDrag(nextActiveDrag);
-      onDragStart(dragStart.tileId);
+      onDragStart(dragStart.tileId, dragStart.sourceRect);
     },
     [onDragStart, tileCatalog],
   );
@@ -319,7 +349,26 @@ function GameView({
   const finalizeActiveDrag = useCallback(() => {
     const drag = activeHandDragRef.current;
     const dragVisual = currentDragVisualRef.current;
-    const move = onDragEnd();
+    const initialFromVisual =
+      dragVisual ??
+      drag?.initialVisual ??
+      (drag ? createSourceDragTileVisual(drag.sourceRect) : null);
+    const endResult = onDragEnd();
+    const move = endResult?.move ?? null;
+    const targetVisual =
+      drag && endResult?.targetPreviewGeometry
+        ? resolveDraggedTileVisual({
+            sourceRect: drag.sourceRect,
+            dragScreenPosition: null,
+            fallbackVisual: null,
+            previewGeometry: endResult.targetPreviewGeometry,
+            cameraTransform: transform,
+            containerOffset,
+            isSnapped: true,
+          })
+        : null;
+    const fromVisual =
+      endResult?.wasSnapped && targetVisual ? targetVisual : initialFromVisual;
     if (!drag) {
       return;
     }
@@ -332,9 +381,7 @@ function GameView({
             returnId: createNextReturnId(),
             activeDrag: drag,
             returnFrom:
-              dragVisual ??
-              drag.initialVisual ??
-              createSourceDragTileVisual(drag.sourceRect),
+              fromVisual ?? createSourceDragTileVisual(drag.sourceRect),
           }),
         ];
         returningHandDragsRef.current = next;
@@ -363,16 +410,33 @@ function GameView({
       side: move.side,
       openPipFacingOutward: move.openPipFacingOutward,
     };
+
+    if (fromVisual && targetVisual) {
+      pendingPlacementEventRef.current = event;
+      setPlacementAnimation({
+        animationId: createNextPlacementId(),
+        tileId: drag.tileId,
+        value1: drag.value1,
+        value2: drag.value2,
+        from: fromVisual,
+        to: targetVisual,
+      });
+      return;
+    }
+
     appendEvent(event);
   }, [
-    onDragEnd,
-    currentRound,
-    game.gameId,
-    events.length,
-    isPlayerTurn,
-    player1Id,
     appendEvent,
+    containerOffset,
+    currentRound,
     createNextReturnId,
+    createNextPlacementId,
+    events.length,
+    game.gameId,
+    isPlayerTurn,
+    onDragEnd,
+    player1Id,
+    transform,
   ]);
 
   const handleDragEnd = useCallback(() => {
@@ -388,6 +452,34 @@ function GameView({
       return next;
     });
   }, []);
+
+  const handlePlacementAnimationComplete = useCallback(
+    (animationId: string) => {
+      if (placementPauseTimeoutRef.current) {
+        clearTimeout(placementPauseTimeoutRef.current);
+        placementPauseTimeoutRef.current = null;
+      }
+
+      placementPauseTimeoutRef.current = setTimeout(() => {
+        setPlacementAnimation((current) => {
+          if (!current || current.animationId !== animationId) {
+            return current;
+          }
+
+          return null;
+        });
+
+        const event = pendingPlacementEventRef.current;
+        pendingPlacementEventRef.current = null;
+        placementPauseTimeoutRef.current = null;
+
+        if (event) {
+          appendEvent(event);
+        }
+      }, DROP_SETTLE_PAUSE_MS);
+    },
+    [appendEvent],
+  );
 
   const handleReturningDragStart = useCallback(
     (
@@ -422,7 +514,7 @@ function GameView({
       activeHandDragRef.current = promotedDrag;
       currentDragVisualRef.current = currentVisual;
       setActiveHandDrag(promotedDrag);
-      onDragStart(returningDrag.tileId);
+      onDragStart(returningDrag.tileId, returningDrag.sourceRect);
       onDragUpdate(touchPoint.x, touchPoint.y);
     },
     [onDragStart, onDragUpdate],
@@ -758,26 +850,31 @@ function GameView({
           <BoneyardIndicator count={boneyardCount} />
         </View>
 
-      <View ref={viewRef} style={styles.boardContainer} onLayout={onLayout}>
+        <View ref={viewRef} style={styles.boardContainer} onLayout={onLayout}>
           <BoardArea
             board={currentRound.board}
             layout={layout}
-            activeSnap={activeSnap}
-            previewTile={activeSnap ? previewGeometry : null}
+            highlightedAnchor={
+              hasClearedHandThreshold ? dropTargetAnchor : null
+            }
+            previewTile={snapAnchor ? previewGeometry : null}
             onTransitionActiveChange={setIsBoardTransitionActive}
           />
         </View>
 
         {/* Draw button when stuck */}
-        {isPlayerTurn && playableTileIds.size === 0 && !activeHandDrag && (
-          <View style={styles.drawButtonContainer}>
-            <Pressable style={styles.drawButton} onPress={handleDraw}>
-              <Text style={styles.drawButtonText}>
-                {boneyardCount > 0 ? "Draw Tile" : "Pass Turn"}
-              </Text>
-            </Pressable>
-          </View>
-        )}
+        {isPlayerTurn &&
+          playableTileIds.size === 0 &&
+          !activeHandDrag &&
+          !placementAnimation && (
+            <View style={styles.drawButtonContainer}>
+              <Pressable style={styles.drawButton} onPress={handleDraw}>
+                <Text style={styles.drawButtonText}>
+                  {boneyardCount > 0 ? "Draw Tile" : "Pass Turn"}
+                </Text>
+              </Pressable>
+            </View>
+          )}
 
         {/* Gradients behind player hand */}
         <View style={styles.gradientContainer} pointerEvents="none">
@@ -836,7 +933,9 @@ function GameView({
             hand={playerHand}
             playableTileIds={playableTileIds}
             hiddenTileIds={hiddenTileIds}
-            hasActiveDrag={activeHandDrag !== null}
+            hasActiveDrag={
+              activeHandDrag !== null || placementAnimation !== null
+            }
             activeTileId={activeHandDrag?.tileId ?? null}
             isInteractionEnabled={isBoardInteractionEnabled}
             onDragStart={handleHandDragStart}
@@ -850,10 +949,12 @@ function GameView({
         <HandDragOverlay
           activeDrag={activeHandDrag}
           activeDragVisual={currentDragVisual}
+          placementAnimation={placementAnimation}
           returningDrags={returningHandDrags}
-          hideActiveDrag={activeSnap !== null}
+          hideActiveDrag={snapAnchor !== null}
           usesVerticalDragActivation={usesVerticalDragActivation}
-          hasActiveDrag={activeHandDrag !== null}
+          hasActiveDrag={activeHandDrag !== null || placementAnimation !== null}
+          onPlacementAnimationComplete={handlePlacementAnimationComplete}
           onReturnComplete={handleReturnAnimationComplete}
           onReturningDragStart={handleReturningDragStart}
           onReturningDragUpdate={handleReturningDragUpdate}

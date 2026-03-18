@@ -24,6 +24,7 @@ import {
   RootKind,
   Size,
 } from "./types";
+import { createOpenSlot } from "./open-slot";
 import { computeFitTransform } from "./viewport";
 
 const DEFAULT_PADDING = domino.width;
@@ -841,55 +842,6 @@ function getPlacementAttachmentPoint(
   heading: LayoutOrientation,
 ): Point {
   return offsetPoint(openFaceCenter, heading, domino.width / 2);
-}
-
-function createOpenSlot(
-  side: ChainSide,
-  attachmentPoint: Point,
-  heading: LayoutOrientation,
-): LayoutOpenSlot {
-  return {
-    side,
-    attachmentPoint,
-    visualDirection: heading,
-    rect: createSlotRect(attachmentPoint, heading),
-  };
-}
-
-function createSlotRect(attachmentPoint: Point, heading: LayoutOrientation): Rect {
-  if (heading === "left") {
-    return {
-      x: attachmentPoint.x - domino.height,
-      y: attachmentPoint.y - domino.width / 2,
-      width: domino.height,
-      height: domino.width,
-    };
-  }
-
-  if (heading === "right") {
-    return {
-      x: attachmentPoint.x,
-      y: attachmentPoint.y - domino.width / 2,
-      width: domino.height,
-      height: domino.width,
-    };
-  }
-
-  if (heading === "up") {
-    return {
-      x: attachmentPoint.x - domino.width / 2,
-      y: attachmentPoint.y - domino.height,
-      width: domino.width,
-      height: domino.height,
-    };
-  }
-
-  return {
-    x: attachmentPoint.x - domino.width / 2,
-    y: attachmentPoint.y,
-    width: domino.width,
-    height: domino.height,
-  };
 }
 
 function updateArmState(

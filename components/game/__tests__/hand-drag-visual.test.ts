@@ -70,6 +70,34 @@ describe("hand drag visual helpers", () => {
     expect(visual?.orientation).toBe("up");
   });
 
+  it("keeps following the finger when a projected target exists but a hard snap does not", () => {
+    const visual = resolveDraggedTileVisual({
+      sourceRect: { x: 120, y: 200, width: 47.6, height: 99.45 },
+      dragScreenPosition: { x: 180, y: 260 },
+      fallbackVisual: null,
+      previewGeometry: {
+        tileId: "tile-6-5" as TileId,
+        value1: 6,
+        value2: 5,
+        center: { x: 140, y: 60 },
+        rotationDeg: 90,
+        width: 112,
+        height: 56,
+        placedAtSeq: Number.MAX_SAFE_INTEGER,
+        logicalSide: "right",
+        heading: "right",
+      },
+      cameraTransform: { scale: 0.75, translateX: 24, translateY: -8 },
+      containerOffset: { x: 16, y: 32 },
+      isSnapped: false,
+    });
+
+    expect(visual).not.toBeNull();
+    expect(visual?.left).toBeCloseTo(156.2);
+    expect(visual?.top).toBeCloseTo(210.275);
+    expect(visual?.orientation).toBe("up");
+  });
+
   it("uses the fallback visual before a free drag receives its first update", () => {
     const fallbackVisual = {
       left: 120,

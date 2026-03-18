@@ -7,26 +7,33 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withSpring,
+  withTiming,
 } from "react-native-reanimated";
 import { StyleSheet } from "react-native-unistyles";
 import { useEffect } from "react";
+import { domino } from "@/theme/tokens";
 
 import { resolveHandPanIntent } from "./hand-pan-intent";
 import {
   ActiveHandDrag,
   DragTileVisual,
+  PlacementTileAnimation,
   ReturningHandDrag,
   ScreenPoint,
 } from "./hand-drag.types";
 import { createSourceDragTileVisual } from "./hand-drag-visual";
 
+const DROP_SETTLE_DURATION_MS = 160;
+
 interface HandDragOverlayProps {
   activeDrag: ActiveHandDrag | null;
   activeDragVisual: DragTileVisual | null;
+  placementAnimation: PlacementTileAnimation | null;
   returningDrags: readonly ReturningHandDrag[];
   hideActiveDrag: boolean;
   usesVerticalDragActivation: boolean;
   hasActiveDrag: boolean;
+  onPlacementAnimationComplete: (animationId: string) => void;
   onReturnComplete: (returnId: string, tileId: TileId) => void;
   onReturningDragStart: (
     returnId: string,
@@ -40,10 +47,12 @@ interface HandDragOverlayProps {
 export function HandDragOverlay({
   activeDrag,
   activeDragVisual,
+  placementAnimation,
   returningDrags,
   hideActiveDrag,
   usesVerticalDragActivation,
   hasActiveDrag,
+  onPlacementAnimationComplete,
   onReturnComplete,
   onReturningDragStart,
   onReturningDragUpdate,
@@ -71,6 +80,13 @@ export function HandDragOverlay({
         </Animated.View>
       )}
 
+      {placementAnimation && (
+        <PlacementAnimationTile
+          placement={placementAnimation}
+          onPlacementAnimationComplete={onPlacementAnimationComplete}
+        />
+      )}
+
       {returningDrags.map((returningDrag) => (
         <ReturningDragTile
           key={returningDrag.returnId}
@@ -84,6 +100,70 @@ export function HandDragOverlay({
         />
       ))}
     </>
+  );
+}
+
+function PlacementAnimationTile({
+  placement,
+  onPlacementAnimationComplete,
+}: Readonly<{
+  placement: PlacementTileAnimation;
+  onPlacementAnimationComplete: (animationId: string) => void;
+}>) {
+  const initialPosition = resolvePlacementStartPosition(placement);
+  const left = useSharedValue(initialPosition.left);
+  const top = useSharedValue(initialPosition.top);
+
+  useEffect(() => {
+    const startPosition = resolvePlacementStartPosition(placement);
+
+    left.value = startPosition.left;
+    top.value = startPosition.top;
+
+    left.value = withTiming(
+      placement.to.left,
+      {
+        duration: DROP_SETTLE_DURATION_MS,
+      },
+      (finished) => {
+        if (finished) {
+          runOnJS(onPlacementAnimationComplete)(placement.animationId);
+        }
+      },
+    );
+    top.value = withTiming(placement.to.top, {
+      duration: DROP_SETTLE_DURATION_MS,
+    });
+  }, [
+    left,
+    onPlacementAnimationComplete,
+    placement,
+    placement.animationId,
+    placement.from.left,
+    placement.from.orientation,
+    placement.from.scale,
+    placement.from.top,
+    placement.to.left,
+    placement.to.orientation,
+    placement.to.scale,
+    placement.to.top,
+    top,
+  ]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    left: left.value,
+    top: top.value,
+  }));
+
+  return (
+    <Animated.View pointerEvents="none" style={[styles.tile, animatedStyle]}>
+      <DominoTile
+        value1={placement.value1}
+        value2={placement.value2}
+        orientation={placement.to.orientation}
+        scale={placement.to.scale}
+      />
+    </Animated.View>
   );
 }
 
@@ -265,6 +345,46 @@ function ReturningDragTile({
       </Animated.View>
     </GestureDetector>
   );
+}
+
+function resolvePlacementStartPosition(
+  placement: PlacementTileAnimation,
+): Readonly<{
+  left: number;
+  top: number;
+}> {
+  const fromSize = getRenderedTileSize(
+    placement.from.orientation,
+    placement.from.scale,
+  );
+  const toSize = getRenderedTileSize(
+    placement.to.orientation,
+    placement.to.scale,
+  );
+  const fromCenterX = placement.from.left + fromSize.width / 2;
+  const fromCenterY = placement.from.top + fromSize.height / 2;
+
+  return {
+    left: fromCenterX - toSize.width / 2,
+    top: fromCenterY - toSize.height / 2,
+  };
+}
+
+function getRenderedTileSize(
+  orientation: DragTileVisual["orientation"],
+  scale: number,
+): Readonly<{
+  width: number;
+  height: number;
+}> {
+  const isVertical = orientation === "up" || orientation === "down";
+  const tileWidth = isVertical ? domino.width : domino.height;
+  const tileHeight = isVertical ? domino.height : domino.width;
+
+  return {
+    width: tileWidth * scale,
+    height: (tileHeight + 5) * scale,
+  };
 }
 
 const styles = StyleSheet.create(() => ({
