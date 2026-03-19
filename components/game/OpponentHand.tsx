@@ -20,6 +20,9 @@ import {
   shouldHideOpponentLaunchTile,
 } from "./opponent-hand.utils";
 
+const OPPONENT_TURN_ENTER_DURATION_MS = 600;
+const OPPONENT_TURN_EXIT_DURATION_MS = 400;
+
 interface OpponentHandProps {
   count: number;
   isTurn?: boolean;
@@ -70,16 +73,29 @@ export const OpponentHand: React.FC<OpponentHandProps> = ({
       });
     };
 
+    let delayedFrameId: number | null = null;
     const frameId = requestAnimationFrame(measureTile);
+    const animationDurationMs = isTurn
+      ? OPPONENT_TURN_ENTER_DURATION_MS
+      : OPPONENT_TURN_EXIT_DURATION_MS;
+    const timeoutId = setTimeout(() => {
+      delayedFrameId = requestAnimationFrame(measureTile);
+    }, animationDurationMs);
 
     return () => {
       cancelAnimationFrame(frameId);
+      if (delayedFrameId !== null) {
+        cancelAnimationFrame(delayedFrameId);
+      }
+      clearTimeout(timeoutId);
     };
-  }, [count, isLaunchingTile, launchTileIndex, onLaunchTileRectChange]);
+  }, [count, isLaunchingTile, isTurn, launchTileIndex, onLaunchTileRectChange]);
 
   useEffect(() => {
     if (isTurn) {
-      containerTranslateY.value = withTiming(spacing[16], { duration: 600 });
+      containerTranslateY.value = withTiming(spacing[16], {
+        duration: OPPONENT_TURN_ENTER_DURATION_MS,
+      });
 
       const timeout = setTimeout(() => {
         setIsDrumming(true);
@@ -88,12 +104,16 @@ export const OpponentHand: React.FC<OpponentHandProps> = ({
       return () => {
         clearTimeout(timeout);
         setIsDrumming(false);
-        containerTranslateY.value = withTiming(0, { duration: 400 });
+        containerTranslateY.value = withTiming(0, {
+          duration: OPPONENT_TURN_EXIT_DURATION_MS,
+        });
       };
     }
 
     setIsDrumming(false);
-    containerTranslateY.value = withTiming(0, { duration: 400 });
+    containerTranslateY.value = withTiming(0, {
+      duration: OPPONENT_TURN_EXIT_DURATION_MS,
+    });
   }, [containerTranslateY, isTurn]);
 
   const containerAnimatedStyle = useAnimatedStyle(() => ({
