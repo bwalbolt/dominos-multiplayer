@@ -47,6 +47,7 @@ import type {
   ActiveScoreBurst,
   PendingScoreBurst,
 } from "@/components/game/score-burst.helpers";
+import { resolveVisualTurnPlayerId } from "@/components/game/visual-turn.helpers";
 import { getComputerAction } from "@/src/game-domain/computer-player";
 import {
   GameEvent,
@@ -207,15 +208,38 @@ function GameView({
   >([]);
   const [activeScoreBurst, setActiveScoreBurst] =
     useState<ActiveScoreBurst | null>(null);
+  const resolution = useMemo(() => {
+    if (!currentRound || currentRound.status !== "active") return null;
+    return evaluateRoundResolution(currentRound, tileCatalog);
+  }, [currentRound, tileCatalog]);
   const [displayedPlayerScore, setDisplayedPlayerScore] = useState(
     playerState.score,
   );
   const [displayedOpponentScore, setDisplayedOpponentScore] = useState(
     opponentState.score,
   );
+  const {
+    appendEvent,
+    appendEvents,
+    events,
+    initialize,
+    seed: storedSeed,
+  } = useLocalSessionStore();
+  const authoritativeActivePlayerId = game.turn?.activePlayerId ?? null;
+  const isPlayerTurn = authoritativeActivePlayerId === player1Id;
+  const visualTurnPlayerId = useMemo(
+    () =>
+      resolveVisualTurnPlayerId({
+        game,
+        events,
+        hasPendingRoundResolution: resolution !== null,
+      }),
+    [events, game, resolution],
+  );
+  const isVisualPlayerTurn = visualTurnPlayerId === player1Id;
   const [headerActiveScoreSide, setHeaderActiveScoreSide] = useState<
     "player" | "opponent"
-  >(game.turn?.activePlayerId === player1Id ? "player" : "opponent");
+  >(isVisualPlayerTurn ? "player" : "opponent");
   const playerDisplayedScoreValue = useSharedValue(playerState.score);
   const opponentDisplayedScoreValue = useSharedValue(opponentState.score);
   const playerHeaderScoreScale = useSharedValue(1);
@@ -261,7 +285,6 @@ function GameView({
   const fivesScoringTotal = useMemo(() => {
     return calculateFivesScoringTotal(currentRound.board);
   }, [currentRound.board]);
-  const isPlayerTurn = game.turn?.activePlayerId === player1Id;
   const isBoardInteractionEnabled =
     isPlayerTurn &&
     isScreenFocused &&
@@ -306,14 +329,6 @@ function GameView({
     containerOffset,
     isBoardInteractionEnabled,
   );
-
-  const {
-    appendEvent,
-    appendEvents,
-    events,
-    initialize,
-    seed: storedSeed,
-  } = useLocalSessionStore();
 
   useAnimatedReaction(
     () => Math.round(playerDisplayedScoreValue.value),
@@ -379,14 +394,14 @@ function GameView({
     };
     setScoreBurstQueue([]);
     setActiveScoreBurst(null);
-    setHeaderActiveScoreSide(isPlayerTurn ? "player" : "opponent");
+    setHeaderActiveScoreSide(isVisualPlayerTurn ? "player" : "opponent");
     playerDisplayedScoreValue.value = playerState.score;
     opponentDisplayedScoreValue.value = opponentState.score;
     setDisplayedPlayerScore(playerState.score);
     setDisplayedOpponentScore(opponentState.score);
   }, [
     events,
-    isPlayerTurn,
+    isVisualPlayerTurn,
     opponentDisplayedScoreValue,
     opponentState.score,
     playerDisplayedScoreValue,
@@ -399,13 +414,13 @@ function GameView({
     }
 
     const timeoutId = setTimeout(() => {
-      setHeaderActiveScoreSide(isPlayerTurn ? "player" : "opponent");
+      setHeaderActiveScoreSide(isVisualPlayerTurn ? "player" : "opponent");
     }, HEADER_ACTIVE_COLOR_SWAP_DELAY_MS);
 
     return () => {
       clearTimeout(timeoutId);
     };
-  }, [isPlayerTurn, isScoreBurstPending]);
+  }, [isScoreBurstPending, isVisualPlayerTurn]);
 
   useEffect(() => {
     const currentSnapshot = {
@@ -1088,11 +1103,6 @@ function GameView({
 
   const [showDevTools, setShowDevTools] = useState(false);
 
-  const resolution = useMemo(() => {
-    if (!currentRound || currentRound.status !== "active") return null;
-    return evaluateRoundResolution(currentRound, tileCatalog);
-  }, [currentRound, tileCatalog]);
-
   useEffect(() => {
     if (
       game.status !== "active" ||
@@ -1423,7 +1433,7 @@ function GameView({
       <View style={styles.content}>
         <OpponentHand
           count={displayedOpponentHandCount}
-          isTurn={game.turn?.activePlayerId === player2Id}
+          isTurn={visualTurnPlayerId === player2Id}
           isLaunchingTile={opponentPlacementAnimation !== null}
           onLaunchTileRectChange={setOpponentLaunchTileRect}
           pendingDrawTileIndex={drawPresentation.trackedOpponentTileIndex}
@@ -1476,7 +1486,7 @@ function GameView({
         {/* Gradients behind player hand */}
         <View style={styles.gradientContainer} pointerEvents="none">
           {/* Player turn blue glow gradient (216px) */}
-          {isPlayerTurn && (
+          {isVisualPlayerTurn && (
             <View style={styles.turnGradient}>
               <Svg
                 style={styles.svgFill}
