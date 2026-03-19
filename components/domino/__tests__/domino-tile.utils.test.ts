@@ -3,6 +3,7 @@ import { domino } from "@/theme/tokens";
 import {
   buildDominoTileDepthFillPath,
   clampDominoFlipProgress,
+  getDominoOrientationForYFlip,
   getDominoTileBodySize,
   getDominoTileFrameSize,
 } from "../domino-tile.utils";
@@ -26,6 +27,13 @@ describe("domino-tile.utils", () => {
     expect(clampDominoFlipProgress(-1)).toBe(0);
     expect(clampDominoFlipProgress(0.5)).toBe(0.5);
     expect(clampDominoFlipProgress(2)).toBe(1);
+  });
+
+  it("mirrors horizontal orientations for a Y-axis flip while preserving vertical ones", () => {
+    expect(getDominoOrientationForYFlip("up")).toBe("up");
+    expect(getDominoOrientationForYFlip("down")).toBe("down");
+    expect(getDominoOrientationForYFlip("left")).toBe("right");
+    expect(getDominoOrientationForYFlip("right")).toBe("left");
   });
 
   it("cuts the faux depth fill out of the tile body silhouette", () => {

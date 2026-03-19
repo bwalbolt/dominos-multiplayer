@@ -145,6 +145,20 @@ export function getDominoTileRotationAngle(
   );
 }
 
+export function getDominoOrientationForYFlip(
+  orientation: DominoOrientation,
+): DominoOrientation {
+  if (orientation === "left") {
+    return "right";
+  }
+
+  if (orientation === "right") {
+    return "left";
+  }
+
+  return orientation;
+}
+
 export function clampDominoFlipProgress(progress?: number): number {
   if (progress === undefined) {
     return 0;

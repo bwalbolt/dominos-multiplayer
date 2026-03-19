@@ -1,5 +1,8 @@
 import { DominoTile } from "@/components/domino/domino-tile";
-import { getDominoTileFrameSize } from "@/components/domino/domino-tile.utils";
+import {
+  getDominoOrientationForYFlip,
+  getDominoTileFrameSize,
+} from "@/components/domino/domino-tile.utils";
 import { TileId } from "@/src/game-domain/types";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
@@ -219,23 +222,21 @@ function OpponentPlacementAnimationTile({
       return;
     }
 
+    const renderedOrientation = getDominoOrientationForYFlip(
+      placement.to.orientation,
+    );
+
     cancelAnimation(left);
     cancelAnimation(top);
     cancelAnimation(scale);
 
-    setOrientation(placement.to.orientation);
-    left.value = resolveOpponentTileLeft(
-      placement.via,
-      placement.to.orientation,
-    );
-    top.value = resolveOpponentTileTop(
-      placement.via,
-      placement.to.orientation,
-    );
+    setOrientation(renderedOrientation);
+    left.value = resolveOpponentTileLeft(placement.via, renderedOrientation);
+    top.value = resolveOpponentTileTop(placement.via, renderedOrientation);
     scale.value = placement.via.scale;
 
     left.value = withTiming(
-      resolveOpponentTileLeft(placement.to, placement.to.orientation),
+      resolveOpponentTileLeft(placement.to, renderedOrientation),
       {
         duration: placement.settleDurationMs,
         easing: Easing.out(Easing.cubic),
@@ -247,7 +248,7 @@ function OpponentPlacementAnimationTile({
       },
     );
     top.value = withTiming(
-      resolveOpponentTileTop(placement.to, placement.to.orientation),
+      resolveOpponentTileTop(placement.to, renderedOrientation),
       {
         duration: placement.settleDurationMs,
         easing: Easing.out(Easing.cubic),
