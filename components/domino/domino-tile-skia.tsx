@@ -4,15 +4,22 @@ import {
   BlurMask,
   Canvas,
   Circle,
+  Group,
   Line,
   Path,
   RoundedRect,
+  Text as SkiaText,
+  matchFont,
 } from "@shopify/react-native-skia";
 import { StyleSheet } from "react-native-unistyles";
 
 import { defaultPipAdapter } from "@/src/game-domain/presentation/pip-adapter";
-import { PipGlyph } from "@/src/game-domain/presentation/tile-face";
-import { domino } from "@/theme/tokens";
+import {
+  FaceGlyph,
+  NumeralGlyph,
+  PipGlyph,
+} from "@/src/game-domain/presentation/tile-face";
+import { domino, fontFamilies, fontWeights } from "@/theme/tokens";
 
 import { DominoTileRendererProps, DominoTileRenderMode } from "./domino-tile.types";
 import {
@@ -23,6 +30,7 @@ import {
   clampDominoFlipProgress,
   getDominoTileFaceOffsets,
   getDominoTileMetrics,
+  getDominoTileRotationAngle,
   resolveDominoTileOpacity,
   resolveDominoTileRenderMode,
   resolveDominoTileShadowOpacity,
@@ -71,6 +79,7 @@ export function DominoTileSkiaRenderer({
   const shadowBlur = (domino.shadowRadius + elevation) * scale;
   const shadowY = bodyY + (domino.shadowOffsetY + elevation) * scale;
   const [face1, face2] = getDominoTileFaceOffsets(orientation);
+  const rotationAngleRad = (getDominoTileRotationAngle(orientation) * Math.PI) / 180;
 
   return (
     <View
@@ -109,11 +118,7 @@ export function DominoTileSkiaRenderer({
             color={domino.colors.shadow}
             opacity={shadowOpacity}
           >
-            <BlurMask
-              blur={shadowBlur}
-              style="normal"
-              respectCTM={true}
-            />
+            <BlurMask blur={shadowBlur} style="normal" respectCTM={true} />
           </RoundedRect>
         )}
 
@@ -206,6 +211,7 @@ export function DominoTileSkiaRenderer({
             bodyHeight={bodyHeight}
             strokeWidth={strokeWidth}
             scale={scale}
+            rotationAngleRad={rotationAngleRad}
           />
         )}
 
@@ -251,6 +257,7 @@ function SkiaFrontSurface({
   bodyHeight,
   strokeWidth,
   scale,
+  rotationAngleRad,
 }: Readonly<{
   value1?: DominoTileRendererProps["value1"];
   value2?: DominoTileRendererProps["value2"];
@@ -265,13 +272,10 @@ function SkiaFrontSurface({
   bodyHeight: number;
   strokeWidth: number;
   scale: number;
+  rotationAngleRad: number;
 }>) {
   const divider = getDominoTileMetrics(orientation).divider;
-  const shouldRenderPips =
-    renderMode === "front" &&
-    faceStyle === "pips" &&
-    value1 !== undefined &&
-    value2 !== undefined;
+  const showGlyphs = renderMode === "front" && value1 !== undefined && value2 !== undefined;
   const dividerOpacity =
     renderMode === "shell" ? domino.shellDividerOpacity : 1;
 
@@ -291,19 +295,21 @@ function SkiaFrontSurface({
         strokeWidth={strokeWidth}
       />
 
-      {shouldRenderPips && (
+      {showGlyphs && (
         <>
-          <SkiaPipFace
-            value={value1}
+          <SkiaFaceRenderer
+            glyph={defaultPipAdapter.getFaceGlyph(value1, faceStyle ?? "pips")}
             x={bodyX + face1.x * scale}
             y={bodyY + face1.y * scale}
             faceSize={domino.width * scale}
+            rotationAngleRad={rotationAngleRad}
           />
-          <SkiaPipFace
-            value={value2}
+          <SkiaFaceRenderer
+            glyph={defaultPipAdapter.getFaceGlyph(value2, faceStyle ?? "pips")}
             x={bodyX + face2.x * scale}
             y={bodyY + face2.y * scale}
             faceSize={domino.width * scale}
+            rotationAngleRad={rotationAngleRad}
           />
         </>
       )}
@@ -311,28 +317,59 @@ function SkiaFrontSurface({
   );
 }
 
+function SkiaFaceRenderer({
+  glyph,
+  x,
+  y,
+  faceSize,
+  rotationAngleRad,
+}: Readonly<{
+  glyph: FaceGlyph;
+  x: number;
+  y: number;
+  faceSize: number;
+  rotationAngleRad: number;
+}>) {
+  if (glyph.style === "pips") {
+    return (
+      <SkiaPipFace
+        glyph={glyph as PipGlyph}
+        x={x}
+        y={y}
+        faceSize={faceSize}
+      />
+    );
+  }
+
+  if (glyph.style === "numerals") {
+    return (
+      <SkiaNumeralFace
+        glyph={glyph as NumeralGlyph}
+        x={x}
+        y={y}
+        faceSize={faceSize}
+        rotationAngleRad={rotationAngleRad}
+      />
+    );
+  }
+
+  return null;
+}
+
 function SkiaPipFace({
-  value,
+  glyph,
   x,
   y,
   faceSize,
 }: Readonly<{
-  value: NonNullable<DominoTileRendererProps["value1"]>;
+  glyph: PipGlyph;
   x: number;
   y: number;
   faceSize: number;
 }>) {
-  const glyph = defaultPipAdapter.getFaceGlyph(value, "pips");
-
-  if (glyph.style !== "pips") {
-    return null;
-  }
-
-  const pipGlyph = glyph as PipGlyph;
-
   return (
     <>
-      {pipGlyph.pips.map((pip, index) => (
+      {glyph.pips.map((pip, index) => (
         <Circle
           key={`${index}-${pip.x}-${pip.y}`}
           cx={x + pip.x * faceSize}
@@ -342,6 +379,42 @@ function SkiaPipFace({
         />
       ))}
     </>
+  );
+}
+
+function SkiaNumeralFace({
+  glyph,
+  x,
+  y,
+  faceSize,
+  rotationAngleRad,
+}: Readonly<{
+  glyph: NumeralGlyph;
+  x: number;
+  y: number;
+  faceSize: number;
+  rotationAngleRad: number;
+}>) {
+  const scale = faceSize / domino.width;
+  const font = matchFont({
+    fontFamily: fontFamilies.body,
+    fontSize: domino.numeralFontSize * scale,
+    fontWeight: fontWeights.black,
+  });
+  const bounds = font.measureText(glyph.label);
+  const textWidth = bounds.width ?? 0;
+  const center = faceSize / 2;
+
+  return (
+    <Group transform={[{ rotate: rotationAngleRad }]} origin={{ x: x + center, y: y + center }}>
+      <SkiaText
+        x={x + center - textWidth / 2}
+        y={y + center + domino.numeralVerticalOffset * scale}
+        text={glyph.label}
+        font={font}
+        color={domino.colors.pips}
+      />
+    </Group>
   );
 }
 
