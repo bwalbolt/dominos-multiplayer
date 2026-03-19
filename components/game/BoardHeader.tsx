@@ -1,10 +1,16 @@
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
-import React from "react";
+import React, { useCallback, useEffect, useRef } from "react";
 import { Pressable, Text, View } from "react-native";
+import Animated, {
+  useAnimatedStyle,
+} from "react-native-reanimated";
+import type { SharedValue } from "react-native-reanimated";
 import { StyleSheet } from "react-native-unistyles";
 
 import { designTokens, spacing, typography } from "@/theme/tokens";
+
+import type { ScreenRect } from "./hand-drag.types";
 
 interface BoardHeaderProps {
   opponentName: string;
@@ -12,6 +18,13 @@ interface BoardHeaderProps {
   opponentAvatar: any;
   playerScore: number;
   opponentScore: number;
+  activeScoreSide?: "player" | "opponent";
+  displayedPlayerScore?: number;
+  displayedOpponentScore?: number;
+  onPlayerScoreRectChange?: (rect: ScreenRect | null) => void;
+  onOpponentScoreRectChange?: (rect: ScreenRect | null) => void;
+  playerScoreScale?: SharedValue<number>;
+  opponentScoreScale?: SharedValue<number>;
 }
 
 export const BoardHeader: React.FC<BoardHeaderProps> = ({
@@ -20,8 +33,93 @@ export const BoardHeader: React.FC<BoardHeaderProps> = ({
   opponentAvatar,
   playerScore,
   opponentScore,
+  activeScoreSide = "player",
+  displayedPlayerScore = playerScore,
+  displayedOpponentScore = opponentScore,
+  onPlayerScoreRectChange,
+  onOpponentScoreRectChange,
+  playerScoreScale,
+  opponentScoreScale,
 }) => {
   const router = useRouter();
+  const playerScoreRef = useRef<View | null>(null);
+  const opponentScoreRef = useRef<View | null>(null);
+  const playerScoreAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: playerScoreScale?.value ?? 1 }],
+  }));
+  const opponentScoreAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: opponentScoreScale?.value ?? 1 }],
+  }));
+
+  const measureRect = useCallback(
+    (
+      ref: React.RefObject<View | null>,
+      onRectChange?: (rect: ScreenRect | null) => void,
+    ) => {
+      if (!onRectChange) {
+        return;
+      }
+
+      const target = ref.current;
+      if (!target) {
+        onRectChange(null);
+        return;
+      }
+
+      target.measureInWindow((x, y, width, height) => {
+        onRectChange({ x, y, width, height });
+      });
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!onPlayerScoreRectChange) {
+      return;
+    }
+
+    let delayedFrameId: number | null = null;
+    const frameId = requestAnimationFrame(() => {
+      measureRect(playerScoreRef, onPlayerScoreRectChange);
+    });
+    const timeoutId = setTimeout(() => {
+      delayedFrameId = requestAnimationFrame(() => {
+        measureRect(playerScoreRef, onPlayerScoreRectChange);
+      });
+    }, 50);
+
+    return () => {
+      cancelAnimationFrame(frameId);
+      if (delayedFrameId !== null) {
+        cancelAnimationFrame(delayedFrameId);
+      }
+      clearTimeout(timeoutId);
+    };
+  }, [displayedPlayerScore, measureRect, onPlayerScoreRectChange]);
+
+  useEffect(() => {
+    if (!onOpponentScoreRectChange) {
+      return;
+    }
+
+    let delayedFrameId: number | null = null;
+    const frameId = requestAnimationFrame(() => {
+      measureRect(opponentScoreRef, onOpponentScoreRectChange);
+    });
+    const timeoutId = setTimeout(() => {
+      delayedFrameId = requestAnimationFrame(() => {
+        measureRect(opponentScoreRef, onOpponentScoreRectChange);
+      });
+    }, 50);
+
+    return () => {
+      cancelAnimationFrame(frameId);
+      if (delayedFrameId !== null) {
+        cancelAnimationFrame(delayedFrameId);
+      }
+      clearTimeout(timeoutId);
+    };
+  }, [displayedOpponentScore, measureRect, onOpponentScoreRectChange]);
 
   return (
     <View style={styles.header}>
@@ -40,9 +138,31 @@ export const BoardHeader: React.FC<BoardHeaderProps> = ({
       </View>
 
       <View style={styles.scoreContainer}>
-        <Text style={styles.scoreValue}>{playerScore}</Text>
+        <View ref={playerScoreRef} collapsable={false}>
+          <Animated.View style={playerScoreAnimatedStyle}>
+            <Text
+              style={[
+                styles.scoreValue,
+                activeScoreSide !== "player" && styles.inactiveScoreValue,
+              ]}
+            >
+              {displayedPlayerScore}
+            </Text>
+          </Animated.View>
+        </View>
         <Text style={styles.scoreLabel}>to</Text>
-        <Text style={styles.scoreValue}>{opponentScore}</Text>
+        <View ref={opponentScoreRef} collapsable={false}>
+          <Animated.View style={opponentScoreAnimatedStyle}>
+            <Text
+              style={[
+                styles.scoreValue,
+                activeScoreSide !== "opponent" && styles.inactiveScoreValue,
+              ]}
+            >
+              {displayedOpponentScore}
+            </Text>
+          </Animated.View>
+        </View>
       </View>
     </View>
   );
@@ -105,6 +225,9 @@ const styles = StyleSheet.create((theme) => ({
   scoreValue: {
     ...typography.scoreText,
     color: theme.colors.black,
+  },
+  inactiveScoreValue: {
+    color: theme.colors.black45,
   },
   scoreLabel: {
     ...typography.tinyText,

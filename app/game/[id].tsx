@@ -7,6 +7,7 @@ import { HandDragOverlay } from "@/components/game/HandDragOverlay";
 import { OpenEndsIndicator } from "@/components/game/OpenEndsIndicator";
 import { OpponentHand } from "@/components/game/OpponentHand";
 import { PlayerHand } from "@/components/game/PlayerHand";
+import { ScoreBurstOverlay } from "@/components/game/ScoreBurstOverlay";
 import {
   PendingDrawState,
   createDrawTileAnimation,
@@ -38,6 +39,14 @@ import {
   ScreenPoint,
   ScreenRect,
 } from "@/components/game/hand-drag.types";
+import {
+  detectScoreBurstFromTilePlayed,
+  getScoreBurstTargetRect,
+} from "@/components/game/score-burst.helpers";
+import type {
+  ActiveScoreBurst,
+  PendingScoreBurst,
+} from "@/components/game/score-burst.helpers";
 import { getComputerAction } from "@/src/game-domain/computer-player";
 import {
   GameEvent,
@@ -76,7 +85,17 @@ import { useIsFocused } from "@react-navigation/native";
 import { Image } from "expo-image";
 import { useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { Pressable, ScrollView, Text, View, useWindowDimensions } from "react-native";
+import {
+  Easing,
+  cancelAnimation,
+  runOnJS,
+  useAnimatedReaction,
+  useSharedValue,
+  withDelay,
+  withSequence,
+  withTiming,
+} from "react-native-reanimated";
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 import { StyleSheet } from "react-native-unistyles";
 
@@ -85,6 +104,15 @@ const OPPONENT_PLAY_INTRO_DURATION_MS = 400;
 const OPPONENT_PLAY_SETTLE_DURATION_MS = 400;
 const OPPONENT_PLAY_INTRO_TRAVEL_PX = 100;
 const OPPONENT_PLAY_INTRO_CLEARANCE_PX = 48;
+const SCORE_BURST_HEADER_COUNT_DELAY_MS = 1850;
+const SCORE_BURST_HEADER_COUNT_DURATION_MS = 150;
+const HEADER_ACTIVE_COLOR_SWAP_DELAY_MS = 500;
+
+type ScoreSnapshot = Readonly<{
+  eventCount: number;
+  playerScore: number;
+  opponentScore: number;
+}>;
 
 export default function GameScreen() {
   const { id, opponentName } = useLocalSearchParams<{
@@ -170,6 +198,38 @@ function GameView({
   const [opponentDrawTargetRect, setOpponentDrawTargetRect] =
     useState<ScreenRect | null>(null);
   const boneyardIndicatorRef = useRef<View | null>(null);
+  const [playerScoreRect, setPlayerScoreRect] = useState<ScreenRect | null>(null);
+  const [opponentScoreRect, setOpponentScoreRect] = useState<ScreenRect | null>(
+    null,
+  );
+  const [scoreBurstQueue, setScoreBurstQueue] = useState<
+    readonly PendingScoreBurst[]
+  >([]);
+  const [activeScoreBurst, setActiveScoreBurst] =
+    useState<ActiveScoreBurst | null>(null);
+  const [displayedPlayerScore, setDisplayedPlayerScore] = useState(
+    playerState.score,
+  );
+  const [displayedOpponentScore, setDisplayedOpponentScore] = useState(
+    opponentState.score,
+  );
+  const [headerActiveScoreSide, setHeaderActiveScoreSide] = useState<
+    "player" | "opponent"
+  >(game.turn?.activePlayerId === player1Id ? "player" : "opponent");
+  const playerDisplayedScoreValue = useSharedValue(playerState.score);
+  const opponentDisplayedScoreValue = useSharedValue(opponentState.score);
+  const playerHeaderScoreScale = useSharedValue(1);
+  const opponentHeaderScoreScale = useSharedValue(1);
+  const previousScoreSnapshotRef = useRef<ScoreSnapshot>({
+    eventCount: 0,
+    playerScore: playerState.score,
+    opponentScore: opponentState.score,
+  });
+  const skipScoreSyncRef = useRef(false);
+  const sessionIdentityRef = useRef<string | null>(null);
+  const windowSize = useWindowDimensions();
+  const isScoreBurstBusy =
+    activeScoreBurst !== null || scoreBurstQueue.length > 0;
 
   const { playerHandIds, playerHand } = useMemo(() => {
     const ids = currentRound.handsByPlayerId[player1Id]?.tileIds || [];
@@ -205,6 +265,7 @@ function GameView({
   const isBoardInteractionEnabled =
     isPlayerTurn &&
     isScreenFocused &&
+    !isScoreBurstBusy &&
     !isBoardTransitionActive &&
     placementAnimation === null &&
     opponentPlacementAnimation === null &&
@@ -254,6 +315,24 @@ function GameView({
     seed: storedSeed,
   } = useLocalSessionStore();
 
+  useAnimatedReaction(
+    () => Math.round(playerDisplayedScoreValue.value),
+    (nextValue, previousValue) => {
+      if (nextValue !== previousValue) {
+        runOnJS(setDisplayedPlayerScore)(nextValue);
+      }
+    },
+  );
+
+  useAnimatedReaction(
+    () => Math.round(opponentDisplayedScoreValue.value),
+    (nextValue, previousValue) => {
+      if (nextValue !== previousValue) {
+        runOnJS(setDisplayedOpponentScore)(nextValue);
+      }
+    },
+  );
+
   const playableTileIds = useMemo(
     () => new Set(legalMoves.map((m) => m.tileId)),
     [legalMoves],
@@ -265,6 +344,231 @@ function GameView({
     }),
     [game.playerStateById, player1Id, player2Id],
   );
+  const pendingScoreBurst = (() => {
+    const previousSnapshot = previousScoreSnapshotRef.current;
+
+    if (events.length === previousSnapshot.eventCount) {
+      return null;
+    }
+
+    return detectScoreBurstFromTilePlayed({
+      latestEvent: events[events.length - 1],
+      previousPlayerScore: previousSnapshot.playerScore,
+      previousOpponentScore: previousSnapshot.opponentScore,
+      nextPlayerScore: playerState.score,
+      nextOpponentScore: opponentState.score,
+      player1Id,
+      player2Id,
+    });
+  })();
+  const isScoreBurstPending =
+    isScoreBurstBusy || pendingScoreBurst !== null;
+
+  useEffect(() => {
+    const nextSessionIdentity = events[0]?.eventId ?? null;
+
+    if (sessionIdentityRef.current === nextSessionIdentity) {
+      return;
+    }
+
+    sessionIdentityRef.current = nextSessionIdentity;
+    previousScoreSnapshotRef.current = {
+      eventCount: events.length,
+      playerScore: playerState.score,
+      opponentScore: opponentState.score,
+    };
+    setScoreBurstQueue([]);
+    setActiveScoreBurst(null);
+    setHeaderActiveScoreSide(isPlayerTurn ? "player" : "opponent");
+    playerDisplayedScoreValue.value = playerState.score;
+    opponentDisplayedScoreValue.value = opponentState.score;
+    setDisplayedPlayerScore(playerState.score);
+    setDisplayedOpponentScore(opponentState.score);
+  }, [
+    events,
+    isPlayerTurn,
+    opponentDisplayedScoreValue,
+    opponentState.score,
+    playerDisplayedScoreValue,
+    playerState.score,
+  ]);
+
+  useEffect(() => {
+    if (isScoreBurstPending) {
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      setHeaderActiveScoreSide(isPlayerTurn ? "player" : "opponent");
+    }, HEADER_ACTIVE_COLOR_SWAP_DELAY_MS);
+
+    return () => {
+      clearTimeout(timeoutId);
+    };
+  }, [isPlayerTurn, isScoreBurstPending]);
+
+  useEffect(() => {
+    const currentSnapshot = {
+      eventCount: events.length,
+      playerScore: playerState.score,
+      opponentScore: opponentState.score,
+    };
+
+    if (previousScoreSnapshotRef.current.eventCount === 0) {
+      previousScoreSnapshotRef.current = currentSnapshot;
+      playerDisplayedScoreValue.value = playerState.score;
+      opponentDisplayedScoreValue.value = opponentState.score;
+      setDisplayedPlayerScore(playerState.score);
+      setDisplayedOpponentScore(opponentState.score);
+      return;
+    }
+
+    if (events.length === previousScoreSnapshotRef.current.eventCount) {
+      return;
+    }
+
+    const previousSnapshot = previousScoreSnapshotRef.current;
+    const nextScoreBurst = pendingScoreBurst;
+
+    if (nextScoreBurst) {
+      skipScoreSyncRef.current = true;
+      playerDisplayedScoreValue.value = previousSnapshot.playerScore;
+      opponentDisplayedScoreValue.value = previousSnapshot.opponentScore;
+      setDisplayedPlayerScore(previousSnapshot.playerScore);
+      setDisplayedOpponentScore(previousSnapshot.opponentScore);
+      setScoreBurstQueue((currentQueue) => {
+        if (currentQueue.some((burst) => burst.id === nextScoreBurst.id)) {
+          return currentQueue;
+        }
+
+        return [...currentQueue, nextScoreBurst];
+      });
+    }
+
+    previousScoreSnapshotRef.current = currentSnapshot;
+  }, [
+    events,
+    pendingScoreBurst,
+    opponentDisplayedScoreValue,
+    opponentState.score,
+    player1Id,
+    player2Id,
+    playerDisplayedScoreValue,
+    playerState.score,
+  ]);
+
+  useEffect(() => {
+    if (skipScoreSyncRef.current) {
+      skipScoreSyncRef.current = false;
+      return;
+    }
+
+    if (isScoreBurstPending) {
+      return;
+    }
+
+    cancelAnimation(playerDisplayedScoreValue);
+    cancelAnimation(opponentDisplayedScoreValue);
+    cancelAnimation(playerHeaderScoreScale);
+    cancelAnimation(opponentHeaderScoreScale);
+
+    playerDisplayedScoreValue.value = playerState.score;
+    opponentDisplayedScoreValue.value = opponentState.score;
+    playerHeaderScoreScale.value = 1;
+    opponentHeaderScoreScale.value = 1;
+    setDisplayedPlayerScore(playerState.score);
+    setDisplayedOpponentScore(opponentState.score);
+  }, [
+    isScoreBurstPending,
+    opponentDisplayedScoreValue,
+    opponentHeaderScoreScale,
+    opponentState.score,
+    playerDisplayedScoreValue,
+    playerHeaderScoreScale,
+    playerState.score,
+  ]);
+
+  useEffect(() => {
+    if (activeScoreBurst || scoreBurstQueue.length === 0) {
+      return;
+    }
+
+    const nextScoreBurst = scoreBurstQueue[0];
+    const targetRect = getScoreBurstTargetRect(
+      nextScoreBurst.side,
+      playerScoreRect,
+      opponentScoreRect,
+    );
+
+    if (!targetRect) {
+      return;
+    }
+
+    setActiveScoreBurst({
+      ...nextScoreBurst,
+      targetRect,
+    });
+    setScoreBurstQueue((currentQueue) => currentQueue.slice(1));
+  }, [activeScoreBurst, opponentScoreRect, playerScoreRect, scoreBurstQueue]);
+
+  useEffect(() => {
+    if (!activeScoreBurst) {
+      return;
+    }
+
+    const targetScoreValue =
+      activeScoreBurst.side === "player"
+        ? playerDisplayedScoreValue
+        : opponentDisplayedScoreValue;
+    const targetScoreScale =
+      activeScoreBurst.side === "player"
+        ? playerHeaderScoreScale
+        : opponentHeaderScoreScale;
+    const otherScoreScale =
+      activeScoreBurst.side === "player"
+        ? opponentHeaderScoreScale
+        : playerHeaderScoreScale;
+
+    cancelAnimation(targetScoreValue);
+    cancelAnimation(targetScoreScale);
+    cancelAnimation(otherScoreScale);
+
+    targetScoreValue.value = activeScoreBurst.fromScore;
+    targetScoreScale.value = 1;
+    otherScoreScale.value = 1;
+    targetScoreValue.value = withDelay(
+      SCORE_BURST_HEADER_COUNT_DELAY_MS,
+      withTiming(activeScoreBurst.toScore, {
+        duration: SCORE_BURST_HEADER_COUNT_DURATION_MS,
+        easing: Easing.out(Easing.cubic),
+      }),
+    );
+    targetScoreScale.value = withDelay(
+      SCORE_BURST_HEADER_COUNT_DELAY_MS,
+      withSequence(
+        withTiming(1.12, {
+          duration: SCORE_BURST_HEADER_COUNT_DURATION_MS / 2,
+          easing: Easing.out(Easing.quad),
+        }),
+        withTiming(1, {
+          duration: SCORE_BURST_HEADER_COUNT_DURATION_MS / 2,
+          easing: Easing.in(Easing.quad),
+        }),
+      ),
+    );
+
+    return () => {
+      cancelAnimation(targetScoreValue);
+      cancelAnimation(targetScoreScale);
+    };
+  }, [
+    activeScoreBurst,
+    opponentDisplayedScoreValue,
+    opponentHeaderScoreScale,
+    playerDisplayedScoreValue,
+    playerHeaderScoreScale,
+  ]);
+
   const autoEndedScoreEventCountRef = useRef<number | null>(null);
   const [activeHandDrag, setActiveHandDrag] = useState<ActiveHandDrag | null>(
     null,
@@ -712,6 +1016,16 @@ function GameView({
     [appendEvent],
   );
 
+  const handleScoreBurstComplete = useCallback((burstId: string) => {
+    setActiveScoreBurst((current) => {
+      if (!current || current.id !== burstId) {
+        return current;
+      }
+
+      return null;
+    });
+  }, []);
+
   const handleReturningDragStart = useCallback(
     (
       returnId: string,
@@ -783,7 +1097,8 @@ function GameView({
     if (
       game.status !== "active" ||
       currentRound.status !== "active" ||
-      resolution !== null
+      resolution !== null ||
+      isScoreBurstPending
     ) {
       autoEndedScoreEventCountRef.current = null;
       return;
@@ -818,6 +1133,7 @@ function GameView({
     game.gameId,
     game.metadata.targetScore,
     game.status,
+    isScoreBurstPending,
     resolution,
     scoreByPlayerId,
   ]);
@@ -827,6 +1143,7 @@ function GameView({
     const isComputerTurn = game.turn?.activePlayerId === player2Id;
     const isRoundActive = currentRound.status === "active";
     const noResolutionPending = !resolution;
+    const noScoreBurstPending = !isScoreBurstPending;
     const hasPendingOpponentPlay =
       pendingOpponentPlayEventRef.current !== null ||
       opponentPlacementAnimation !== null ||
@@ -837,6 +1154,7 @@ function GameView({
       isComputerTurn &&
       isRoundActive &&
       noResolutionPending &&
+      noScoreBurstPending &&
       !hasPendingOpponentPlay
     ) {
       const timer = setTimeout(() => {
@@ -901,6 +1219,7 @@ function GameView({
     game.turn?.turnNumber,
     currentRound.status,
     resolution,
+    isScoreBurstPending,
     reconstruction,
     player2Id,
     game.gameId,
@@ -1092,6 +1411,13 @@ function GameView({
         opponentAvatar={require("@/assets/images/avatar(9).png")}
         playerScore={playerState.score}
         opponentScore={opponentState.score}
+        activeScoreSide={headerActiveScoreSide}
+        displayedPlayerScore={displayedPlayerScore}
+        displayedOpponentScore={displayedOpponentScore}
+        onPlayerScoreRectChange={setPlayerScoreRect}
+        onOpponentScoreRectChange={setOpponentScoreRect}
+        playerScoreScale={playerHeaderScoreScale}
+        opponentScoreScale={opponentHeaderScoreScale}
       />
 
       <View style={styles.content}>
@@ -1131,6 +1457,7 @@ function GameView({
 
         {/* Draw button when stuck */}
         {isPlayerTurn &&
+          !isScoreBurstPending &&
           playableTileIds.size === 0 &&
           !activeHandDrag &&
           !placementAnimation &&
@@ -1274,6 +1601,12 @@ function GameView({
         />
       </View>
 
+      <ScoreBurstOverlay
+        burst={activeScoreBurst}
+        windowSize={windowSize}
+        onAnimationComplete={handleScoreBurstComplete}
+      />
+
       {showDevTools && (
         <View style={styles.devTools}>
           <View style={styles.devHeader}>
@@ -1317,7 +1650,7 @@ function GameView({
       )}
 
       {/* Round Resolution Overlay */}
-      {resolution && (
+      {!isScoreBurstPending && resolution && (
         <View style={styles.resolutionOverlay}>
           <View style={styles.resolutionCard}>
             <Text style={styles.resolutionTitle}>
@@ -1344,7 +1677,7 @@ function GameView({
         </View>
       )}
       {/* Game Resolution Overlay */}
-      {game.status === "completed" && (
+      {!isScoreBurstPending && game.status === "completed" && (
         <View style={styles.resolutionOverlay}>
           <View style={styles.resolutionCard}>
             <Text style={styles.resolutionTitle}>Game Over!</Text>
