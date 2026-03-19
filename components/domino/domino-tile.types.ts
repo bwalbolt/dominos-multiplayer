@@ -3,6 +3,34 @@ import { DominoPip } from "../../src/game-domain/types";
 
 export type DominoOrientation = "up" | "down" | "left" | "right";
 export type DominoState = "idle" | "selected" | "ghost";
+export type DominoTileRenderMode = "front" | "back" | "shell";
+
+export interface TileAppearance {
+  renderMode?: DominoTileRenderMode;
+  opacity?: number;
+  outlineStroke?: string;
+  showSelectionOutline?: boolean;
+  showShadow?: boolean;
+}
+
+export interface TilePose {
+  scale?: number;
+  elevation?: number;
+  shadowOpacity?: number;
+  tiltXDeg?: number;
+  tiltYDeg?: number;
+  flipProgress?: number;
+}
+
+export interface DominoTileRendererProps {
+  value1?: DominoPip;
+  value2?: DominoPip;
+  orientation?: DominoOrientation;
+  faceStyle?: FaceStyle;
+  state?: DominoState;
+  appearance?: TileAppearance;
+  pose?: TilePose;
+}
 
 export interface DominoTileProps {
   /**
@@ -33,4 +61,12 @@ export interface DominoTileProps {
    * @default 1
    */
   scale?: number;
+  /**
+   * Optional appearance overrides for shared renderer variants.
+   */
+  appearance?: TileAppearance;
+  /**
+   * Optional shared pose contract for depth, shadow, and future flip/tilt effects.
+   */
+  pose?: TilePose;
 }

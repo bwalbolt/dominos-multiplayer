@@ -8,10 +8,10 @@ import { resolveHandTileInteractionEnabled } from "./hand-interaction";
 import { HandTileDragStart } from "./hand-drag.types";
 import { spacing } from "@/theme/tokens";
 
-import { TileId } from "@/src/game-domain/types";
+import { DominoPip, TileId } from "@/src/game-domain/types";
 
 interface PlayerHandProps {
-  hand: { id: TileId; value1: number; value2: number }[];
+  hand: { id: TileId; value1: DominoPip; value2: DominoPip }[];
   playableTileIds: Set<TileId>;
   isInteractionEnabled: boolean;
   hiddenTileIds: ReadonlySet<TileId>;

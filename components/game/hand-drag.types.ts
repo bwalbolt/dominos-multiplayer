@@ -34,6 +34,19 @@ export type PlacementTileAnimation = Readonly<{
   to: DragTileVisual;
 }>;
 
+export type OpponentPlacementAnimation = Readonly<{
+  animationId: string;
+  tileId: TileId;
+  value1: DominoPip;
+  value2: DominoPip;
+  from: DragTileVisual;
+  via: DragTileVisual;
+  to: DragTileVisual;
+  targetRotationDeg: number;
+  flipIntroDurationMs: number;
+  settleDurationMs: number;
+}>;
+
 export type ActiveHandDrag = Readonly<{
   tileId: TileId;
   value1: DominoPip;

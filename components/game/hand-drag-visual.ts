@@ -1,12 +1,19 @@
 import { DominoOrientation } from "@/components/domino/domino-tile.types";
 import {
+  getDominoTileBodySize,
+  getDominoTileFrameSize,
+} from "@/components/domino/domino-tile.utils";
+import { ChainSide } from "@/src/game-domain/types";
+import {
   CameraTransform,
+  LayoutAnchor,
   PlacedTileGeometry,
   Point,
 } from "@/src/game-domain/layout/types";
-import { domino } from "@/theme/tokens";
 
 import { DragTileVisual, ScreenRect } from "./hand-drag.types";
+
+const DEFAULT_HAND_TILE_BODY_SIZE = getDominoTileBodySize("up");
 
 type ResolveDraggedTileVisualInput = Readonly<{
   sourceRect: ScreenRect;
@@ -22,8 +29,23 @@ export function createSourceDragTileVisual(sourceRect: ScreenRect): DragTileVisu
   return {
     left: sourceRect.x,
     top: sourceRect.y,
-    scale: sourceRect.width / domino.width,
+    scale: sourceRect.width / DEFAULT_HAND_TILE_BODY_SIZE.width,
     orientation: "up",
+  };
+}
+
+export function createCenteredDragTileVisual(
+  center: Point,
+  orientation: DominoOrientation,
+  scale: number,
+): DragTileVisual {
+  const frameSize = getDragTileVisualFrameSize(orientation, scale);
+
+  return {
+    left: center.x - frameSize.width / 2,
+    top: center.y - frameSize.height / 2,
+    scale,
+    orientation,
   };
 }
 
@@ -38,26 +60,49 @@ export function projectBoardPointToScreen(
   };
 }
 
+export function projectPlacedTileGeometryToDragVisual(
+  geometry: PlacedTileGeometry,
+  cameraTransform: CameraTransform,
+  containerOffset: Point,
+): DragTileVisual {
+  const screenCenter = projectBoardPointToScreen(
+    geometry.center,
+    cameraTransform,
+    containerOffset,
+  );
+
+  return createCenteredDragTileVisual(
+    screenCenter,
+    rotationDegToOrientation(geometry.rotationDeg),
+    cameraTransform.scale,
+  );
+}
+
+export function getDragTileVisualCenter(visual: DragTileVisual): Point {
+  const frameSize = getDragTileVisualFrameSize(visual.orientation, visual.scale);
+
+  return {
+    x: visual.left + frameSize.width / 2,
+    y: visual.top + frameSize.height / 2,
+  };
+}
+
+export function findLayoutAnchorForSide(
+  anchors: readonly LayoutAnchor[],
+  side: ChainSide,
+): LayoutAnchor | null {
+  return anchors.find((anchor) => anchor.direction === side) ?? null;
+}
+
 export function resolveDraggedTileVisual(
   input: ResolveDraggedTileVisualInput,
 ): DragTileVisual | null {
   if (input.isSnapped && input.previewGeometry) {
-    const screenCenter = projectBoardPointToScreen(
-      input.previewGeometry.center,
+    return projectPlacedTileGeometryToDragVisual(
+      input.previewGeometry,
       input.cameraTransform,
       input.containerOffset,
     );
-
-    return {
-      left:
-        screenCenter.x -
-        (input.previewGeometry.width * input.cameraTransform.scale) / 2,
-      top:
-        screenCenter.y -
-        (input.previewGeometry.height * input.cameraTransform.scale) / 2,
-      scale: input.cameraTransform.scale,
-      orientation: rotationDegToOrientation(input.previewGeometry.rotationDeg),
-    };
   }
 
   if (!input.dragScreenPosition) {
@@ -67,7 +112,7 @@ export function resolveDraggedTileVisual(
   return {
     left: input.dragScreenPosition.x - input.sourceRect.width / 2,
     top: input.dragScreenPosition.y - input.sourceRect.height / 2,
-    scale: input.sourceRect.width / domino.width,
+    scale: input.sourceRect.width / DEFAULT_HAND_TILE_BODY_SIZE.width,
     orientation: "up",
   };
 }
@@ -93,4 +138,14 @@ function rotationDegToOrientation(rotationDeg: number): DominoOrientation {
 function normalizeDegrees(angleDeg: number): number {
   const normalized = angleDeg % 360;
   return normalized < 0 ? normalized + 360 : normalized;
+}
+
+function getDragTileVisualFrameSize(
+  orientation: DominoOrientation,
+  scale: number,
+): Readonly<{
+  width: number;
+  height: number;
+}> {
+  return getDominoTileFrameSize(orientation, scale);
 }
