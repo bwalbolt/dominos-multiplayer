@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { View } from "react-native";
 import { ScrollView } from "react-native-gesture-handler";
 import { StyleSheet } from "react-native-unistyles";
@@ -11,12 +11,14 @@ import { spacing } from "@/theme/tokens";
 import { DominoPip, TileId } from "@/src/game-domain/types";
 
 interface PlayerHandProps {
-  hand: { id: TileId; value1: DominoPip; value2: DominoPip }[];
+  hand: readonly { id: TileId; value1: DominoPip; value2: DominoPip }[];
   playableTileIds: Set<TileId>;
   isInteractionEnabled: boolean;
   hiddenTileIds: ReadonlySet<TileId>;
   hasActiveDrag: boolean;
   activeTileId: TileId | null;
+  trackedTileId?: TileId | null;
+  onTrackedTileRectChange?: (rect: HandTileDragStart["sourceRect"] | null) => void;
   onDragStart: (dragStart: HandTileDragStart) => void;
   onDragUpdate: (x: number, y: number) => void;
   onDragEnd: () => void;
@@ -29,6 +31,8 @@ export const PlayerHand: React.FC<PlayerHandProps> = ({
   hiddenTileIds,
   hasActiveDrag,
   activeTileId,
+  trackedTileId = null,
+  onTrackedTileRectChange,
   onDragStart,
   onDragUpdate,
   onDragEnd,
@@ -46,6 +50,44 @@ export const PlayerHand: React.FC<PlayerHandProps> = ({
     },
     [],
   );
+
+  useEffect(() => {
+    if (!onTrackedTileRectChange) {
+      return;
+    }
+
+    if (!trackedTileId) {
+      onTrackedTileRectChange(null);
+      return;
+    }
+
+    const measureTile = () => {
+      const tileWrapper = tileWrapperRefs.current[trackedTileId];
+
+      if (!tileWrapper) {
+        onTrackedTileRectChange(null);
+        return;
+      }
+
+      tileWrapper.measureInWindow((x, y, width, height) => {
+        onTrackedTileRectChange({ x, y, width, height });
+      });
+    };
+
+    let delayedFrameId: number | null = null;
+    const frameId = requestAnimationFrame(measureTile);
+    const timeoutId = setTimeout(() => {
+      delayedFrameId = requestAnimationFrame(measureTile);
+    }, 50);
+
+    return () => {
+      cancelAnimationFrame(frameId);
+      if (delayedFrameId !== null) {
+        cancelAnimationFrame(delayedFrameId);
+      }
+      clearTimeout(timeoutId);
+    };
+  }, [hand.length, isScrollable, onTrackedTileRectChange, trackedTileId]);
 
   const handleDragStart = useCallback(
     (tileId: TileId) => {

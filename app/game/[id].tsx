@@ -1,10 +1,17 @@
 import { BoardArea } from "@/components/game/BoardArea";
 import { BoardHeader } from "@/components/game/BoardHeader";
 import { BoneyardIndicator } from "@/components/game/BoneyardIndicator";
+import { DrawTileOverlay } from "@/components/game/DrawTileOverlay";
 import { HandDragOverlay } from "@/components/game/HandDragOverlay";
 import { OpenEndsIndicator } from "@/components/game/OpenEndsIndicator";
 import { OpponentHand } from "@/components/game/OpponentHand";
 import { PlayerHand } from "@/components/game/PlayerHand";
+import {
+  PendingDrawState,
+  createDrawTileAnimation,
+  resolveCompletedDrawEvent,
+  resolveDrawPresentation,
+} from "@/components/game/draw-tile-animation";
 import {
   createActiveHandDrag,
   createPromotedActiveHandDrag,
@@ -21,6 +28,7 @@ import {
 } from "@/components/game/hand-drag-visual";
 import {
   ActiveHandDrag,
+  DrawTileAnimation,
   DragTileVisual,
   HandTileDragStart,
   OpponentPlacementAnimation,
@@ -33,7 +41,6 @@ import { getComputerAction } from "@/src/game-domain/computer-player";
 import {
   GameEvent,
   RoundEndedEvent,
-  TileDrawnEvent,
   TilePlayedEvent,
   TurnPassedEvent,
 } from "@/src/game-domain/events/schema";
@@ -150,8 +157,17 @@ function GameView({
     useState<PlacementTileAnimation | null>(null);
   const [opponentPlacementAnimation, setOpponentPlacementAnimation] =
     useState<OpponentPlacementAnimation | null>(null);
+  const [drawAnimation, setDrawAnimation] =
+    useState<DrawTileAnimation | null>(null);
+  const [pendingDraw, setPendingDraw] = useState<PendingDrawState | null>(null);
   const [opponentLaunchTileRect, setOpponentLaunchTileRect] =
     useState<ScreenRect | null>(null);
+  const [boneyardRect, setBoneyardRect] = useState<ScreenRect | null>(null);
+  const [playerDrawTargetRect, setPlayerDrawTargetRect] =
+    useState<ScreenRect | null>(null);
+  const [opponentDrawTargetRect, setOpponentDrawTargetRect] =
+    useState<ScreenRect | null>(null);
+  const boneyardIndicatorRef = useRef<View | null>(null);
 
   const { playerHandIds, playerHand } = useMemo(() => {
     const ids = currentRound.handsByPlayerId[player1Id]?.tileIds || [];
@@ -165,6 +181,20 @@ function GameView({
   const opponentHandCount =
     currentRound.handsByPlayerId[player2Id]?.handCount || 0;
   const boneyardCount = currentRound.boneyard.remainingCount;
+  const drawPresentation = useMemo(
+    () =>
+      resolveDrawPresentation({
+        playerHand,
+        opponentHandCount,
+        boneyardCount,
+        pendingDraw,
+      }),
+    [boneyardCount, opponentHandCount, pendingDraw, playerHand],
+  );
+  const displayedPlayerHand = drawPresentation.displayedPlayerHand;
+  const displayedOpponentHandCount = drawPresentation.displayedOpponentHandCount;
+  const displayedBoneyardCount = drawPresentation.displayedBoneyardCount;
+  const hasDrawActivity = pendingDraw !== null || drawAnimation !== null;
   const fivesScoringTotal = useMemo(() => {
     return calculateFivesScoringTotal(currentRound.board);
   }, [currentRound.board]);
@@ -174,7 +204,8 @@ function GameView({
     isScreenFocused &&
     !isBoardTransitionActive &&
     placementAnimation === null &&
-    opponentPlacementAnimation === null;
+    opponentPlacementAnimation === null &&
+    !hasDrawActivity;
 
   const opponentProfile = game.players.find(
     (p: any) => p.playerId === player2Id,
@@ -241,8 +272,10 @@ function GameView({
   const activeHandDragRef = useRef<ActiveHandDrag | null>(null);
   const returningHandDragsRef = useRef<ReturningHandDrag[]>([]);
   const currentDragVisualRef = useRef<DragTileVisual | null>(null);
+  const pendingDrawRef = useRef<PendingDrawState | null>(null);
   const nextReturnIdRef = useRef(0);
   const nextPlacementIdRef = useRef(0);
+  const nextDrawIdRef = useRef(0);
   const pendingPlacementEventRef = useRef<TilePlayedEvent | null>(null);
   const pendingOpponentPlayEventRef = useRef<TilePlayedEvent | null>(null);
   const placementPauseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -275,8 +308,11 @@ function GameView({
       new Set([
         ...getHiddenHandTileIds(activeHandDrag, returningHandDrags),
         ...(placementAnimation ? [placementAnimation.tileId] : []),
+        ...(drawPresentation.hiddenPlayerTileId
+          ? [drawPresentation.hiddenPlayerTileId]
+          : []),
       ]),
-    [activeHandDrag, placementAnimation, returningHandDrags],
+    [activeHandDrag, drawPresentation.hiddenPlayerTileId, placementAnimation, returningHandDrags],
   );
   const highlightedTileIsDouble = useMemo(() => {
     if (draggedTileId === null) {
@@ -286,11 +322,12 @@ function GameView({
     const draggedTile = tileCatalog[draggedTileId];
     return draggedTile ? draggedTile.sideA === draggedTile.sideB : false;
   }, [draggedTileId, tileCatalog]);
-  const usesVerticalDragActivation = playerHand.length >= 8;
+  const usesVerticalDragActivation = displayedPlayerHand.length >= 8;
 
   activeHandDragRef.current = activeHandDrag;
   returningHandDragsRef.current = [...returningHandDrags];
   currentDragVisualRef.current = currentDragVisual;
+  pendingDrawRef.current = pendingDraw;
 
   useEffect(() => {
     if (isScreenFocused) {
@@ -302,6 +339,7 @@ function GameView({
     currentDragVisualRef.current = null;
     pendingPlacementEventRef.current = null;
     pendingOpponentPlayEventRef.current = null;
+    pendingDrawRef.current = null;
     if (placementPauseTimeoutRef.current) {
       clearTimeout(placementPauseTimeoutRef.current);
       placementPauseTimeoutRef.current = null;
@@ -309,7 +347,12 @@ function GameView({
     setActiveHandDrag(null);
     setPlacementAnimation(null);
     setOpponentPlacementAnimation(null);
+    setDrawAnimation(null);
+    setPendingDraw(null);
     setOpponentLaunchTileRect(null);
+    setBoneyardRect(null);
+    setPlayerDrawTargetRect(null);
+    setOpponentDrawTargetRect(null);
     setReturningHandDrags([]);
   }, [isScreenFocused]);
 
@@ -323,24 +366,119 @@ function GameView({
     return `placement-${nextPlacementIdRef.current}`;
   }, []);
 
+  const createNextDrawId = useCallback(() => {
+    nextDrawIdRef.current += 1;
+    return `draw-${nextDrawIdRef.current}`;
+  }, []);
+
+  const measureBoneyardRect = useCallback(() => {
+    const boneyardIndicator = boneyardIndicatorRef.current;
+    if (!boneyardIndicator) {
+      setBoneyardRect(null);
+      return;
+    }
+
+    boneyardIndicator.measureInWindow((x, y, width, height) => {
+      setBoneyardRect({ x, y, width, height });
+    });
+  }, []);
+
+  useEffect(() => {
+    let delayedFrameId: number | null = null;
+    const frameId = requestAnimationFrame(measureBoneyardRect);
+    const timeoutId = setTimeout(() => {
+      delayedFrameId = requestAnimationFrame(measureBoneyardRect);
+    }, 50);
+
+    return () => {
+      cancelAnimationFrame(frameId);
+      if (delayedFrameId !== null) {
+        cancelAnimationFrame(delayedFrameId);
+      }
+      clearTimeout(timeoutId);
+    };
+  }, [displayedBoneyardCount, measureBoneyardRect]);
+
+  const startPendingDraw = useCallback(
+    (actor: PendingDrawState["actor"], playerId: PlayerId) => {
+      const tileId = currentRound?.boneyard.remainingTileIds[0];
+      if (!tileId) {
+        return false;
+      }
+
+      const tile = tileCatalog[tileId];
+      if (!tile) {
+        return false;
+      }
+
+      const nextPendingDraw: PendingDrawState = {
+        actor,
+        event: {
+          eventId: Math.random().toString(36).substring(7) as EventId,
+          gameId: game.gameId,
+          eventSeq: events.length + 1,
+          type: "TILE_DRAWN",
+          version: 1,
+          occurredAt: new Date().toISOString(),
+          playerId,
+          roundId: currentRound.roundId,
+          tileId,
+          source: "boneyard",
+        },
+        tile: {
+          id: tileId,
+          value1: tile.sideA,
+          value2: tile.sideB,
+        },
+      };
+
+      pendingDrawRef.current = nextPendingDraw;
+      setPendingDraw(nextPendingDraw);
+      setDrawAnimation(null);
+      setPlayerDrawTargetRect(null);
+      setOpponentDrawTargetRect(null);
+      return true;
+    },
+    [currentRound, events.length, game.gameId, tileCatalog],
+  );
+
+  useEffect(() => {
+    if (!pendingDraw || drawAnimation || !boneyardRect) {
+      return;
+    }
+
+    const targetRect =
+      pendingDraw.actor === "player"
+        ? playerDrawTargetRect
+        : opponentDrawTargetRect;
+    if (!targetRect) {
+      return;
+    }
+
+    setDrawAnimation(
+      createDrawTileAnimation({
+        animationId: createNextDrawId(),
+        tile: pendingDraw.tile,
+        destinationRect: targetRect,
+        boneyardRect,
+        faceMode: pendingDraw.actor === "player" ? "front" : "back",
+      }),
+    );
+  }, [
+    boneyardRect,
+    createNextDrawId,
+    drawAnimation,
+    opponentDrawTargetRect,
+    pendingDraw,
+    playerDrawTargetRect,
+  ]);
+
   const handleDraw = useCallback(() => {
     if (!currentRound) return;
     const tileId = currentRound.boneyard.remainingTileIds[0];
 
     if (tileId) {
-      const event: TileDrawnEvent = {
-        eventId: Math.random().toString(36).substring(7) as EventId,
-        gameId: game.gameId,
-        eventSeq: events.length + 1,
-        type: "TILE_DRAWN",
-        version: 1,
-        occurredAt: new Date().toISOString(),
-        playerId: player1Id,
-        roundId: currentRound.roundId,
-        tileId,
-        source: "boneyard",
-      };
-      appendEvent(event);
+      startPendingDraw("player", player1Id);
     } else {
       // Boneyard empty, pass turn
       const event: TurnPassedEvent = {
@@ -356,7 +494,7 @@ function GameView({
       };
       appendEvent(event);
     }
-  }, [currentRound, game.gameId, events.length, player1Id, appendEvent]);
+  }, [appendEvent, currentRound, events.length, game.gameId, player1Id, startPendingDraw]);
 
   const handleHandDragStart = useCallback(
     (dragStart: HandTileDragStart) => {
@@ -517,6 +655,28 @@ function GameView({
     [appendEvent],
   );
 
+  const handleDrawAnimationComplete = useCallback(
+    (animationId: string) => {
+      const event = resolveCompletedDrawEvent({
+        pendingDraw: pendingDrawRef.current,
+        drawAnimation,
+        completedAnimationId: animationId,
+      });
+
+      if (!event) {
+        return;
+      }
+
+      pendingDrawRef.current = null;
+      setDrawAnimation(null);
+      setPendingDraw(null);
+      setPlayerDrawTargetRect(null);
+      setOpponentDrawTargetRect(null);
+      appendEvent(event);
+    },
+    [appendEvent, drawAnimation],
+  );
+
   const handleOpponentPlacementAnimationComplete = useCallback(
     (animationId: string) => {
       setOpponentPlacementAnimation((current) => {
@@ -654,7 +814,9 @@ function GameView({
     const noResolutionPending = !resolution;
     const hasPendingOpponentPlay =
       pendingOpponentPlayEventRef.current !== null ||
-      opponentPlacementAnimation !== null;
+      opponentPlacementAnimation !== null ||
+      pendingDraw !== null ||
+      drawAnimation !== null;
 
     if (
       isComputerTurn &&
@@ -699,19 +861,7 @@ function GameView({
         } else if (action.kind === "draw") {
           const tileId = currentRound.boneyard.remainingTileIds[0];
           if (tileId) {
-            const event: TileDrawnEvent = {
-              eventId: Math.random().toString(36).substring(7) as EventId,
-              gameId: game.gameId,
-              eventSeq: events.length + 1,
-              type: "TILE_DRAWN",
-              version: 1,
-              occurredAt: new Date().toISOString(),
-              playerId: player2Id,
-              roundId: currentRound.roundId,
-              tileId,
-              source: "boneyard",
-            };
-            appendEvent(event);
+            startPendingDraw("opponent", player2Id);
           }
         } else if (action.kind === "pass") {
           const event: TurnPassedEvent = {
@@ -748,8 +898,11 @@ function GameView({
     tileCatalog,
     opponentLaunchTileRect,
     opponentPlacementAnimation,
+    pendingDraw,
+    drawAnimation,
     createNextPlacementId,
     appendEvent,
+    startPendingDraw,
   ]);
 
   const advanceToNextRound = useCallback(() => {
@@ -928,15 +1081,23 @@ function GameView({
 
       <View style={styles.content}>
         <OpponentHand
-          count={opponentHandCount}
+          count={displayedOpponentHandCount}
           isTurn={game.turn?.activePlayerId === player2Id}
           isLaunchingTile={opponentPlacementAnimation !== null}
           onLaunchTileRectChange={setOpponentLaunchTileRect}
+          pendingDrawTileIndex={drawPresentation.trackedOpponentTileIndex}
+          onPendingDrawTileRectChange={setOpponentDrawTargetRect}
         />
 
         <View style={styles.boneyardWrapper}>
           <OpenEndsIndicator scoringTotal={fivesScoringTotal} />
-          <BoneyardIndicator count={boneyardCount} />
+          <View
+            ref={boneyardIndicatorRef}
+            collapsable={false}
+            style={styles.boneyardIndicatorMeasureTarget}
+          >
+            <BoneyardIndicator count={displayedBoneyardCount} />
+          </View>
         </View>
 
         <View ref={viewRef} style={styles.boardContainer} onLayout={onLayout}>
@@ -958,11 +1119,12 @@ function GameView({
           playableTileIds.size === 0 &&
           !activeHandDrag &&
           !placementAnimation &&
-          !opponentPlacementAnimation && (
+          !opponentPlacementAnimation &&
+          !hasDrawActivity && (
             <View style={styles.drawButtonContainer}>
               <Pressable style={styles.drawButton} onPress={handleDraw}>
                 <Text style={styles.drawButtonText}>
-                  {boneyardCount > 0 ? "Draw Tile" : "Pass Turn"}
+                  {displayedBoneyardCount > 0 ? "Draw Tile" : "Pass Turn"}
                 </Text>
               </Pressable>
             </View>
@@ -1022,21 +1184,31 @@ function GameView({
 
         <View style={styles.handWrapper}>
           <PlayerHand
-            hand={playerHand}
+            hand={displayedPlayerHand}
             playableTileIds={playableTileIds}
             hiddenTileIds={hiddenTileIds}
             hasActiveDrag={
               activeHandDrag !== null ||
               placementAnimation !== null ||
-              opponentPlacementAnimation !== null
+              opponentPlacementAnimation !== null ||
+              hasDrawActivity
             }
             activeTileId={activeHandDrag?.tileId ?? null}
             isInteractionEnabled={isBoardInteractionEnabled}
+            trackedTileId={drawPresentation.trackedPlayerTileId}
+            onTrackedTileRectChange={setPlayerDrawTargetRect}
             onDragStart={handleHandDragStart}
             onDragUpdate={onDragUpdate}
             onDragEnd={handleDragEnd}
           />
         </View>
+      </View>
+
+      <View pointerEvents="box-none" style={styles.drawAnimationOverlay}>
+        <DrawTileOverlay
+          animation={drawAnimation}
+          onAnimationComplete={handleDrawAnimationComplete}
+        />
       </View>
 
       <View pointerEvents="box-none" style={styles.opponentDragOverlay}>
@@ -1048,7 +1220,7 @@ function GameView({
           returningDrags={[]}
           hideActiveDrag={false}
           usesVerticalDragActivation={usesVerticalDragActivation}
-          hasActiveDrag={false}
+          hasActiveDrag={hasDrawActivity}
           onPlacementAnimationComplete={handlePlacementAnimationComplete}
           onOpponentPlacementAnimationComplete={
             handleOpponentPlacementAnimationComplete
@@ -1072,7 +1244,8 @@ function GameView({
           hasActiveDrag={
             activeHandDrag !== null ||
             placementAnimation !== null ||
-            opponentPlacementAnimation !== null
+            opponentPlacementAnimation !== null ||
+            hasDrawActivity
           }
           onPlacementAnimationComplete={handlePlacementAnimationComplete}
           onOpponentPlacementAnimationComplete={
@@ -1278,6 +1451,10 @@ const styles = StyleSheet.create((theme) => ({
     ...StyleSheet.absoluteFillObject,
     zIndex: 5,
   },
+  drawAnimationOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 8,
+  },
   playerDragOverlay: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 25,
@@ -1288,6 +1465,9 @@ const styles = StyleSheet.create((theme) => ({
     left: 0,
     top: 32, // Below header
     zIndex: 10,
+  },
+  boneyardIndicatorMeasureTarget: {
+    alignSelf: "flex-start",
   },
   drawButtonContainer: {
     position: "absolute",
