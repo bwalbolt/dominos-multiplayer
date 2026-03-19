@@ -4,7 +4,10 @@ import {
   getDominoTileFrameSize,
 } from "@/components/domino/domino-tile.utils";
 import { TileId } from "@/src/game-domain/types";
-import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import {
+  Gesture,
+  GestureDetector,
+} from "react-native-gesture-handler";
 import Animated, {
   cancelAnimation,
   Easing,
@@ -19,7 +22,7 @@ import { StyleSheet } from "react-native-unistyles";
 import { useEffect, useState } from "react";
 import { domino } from "@/theme/tokens";
 
-import { resolveHandPanIntent } from "./hand-pan-intent";
+import { handPanIntentThresholds } from "./hand-pan-intent";
 import {
   ActiveHandDrag,
   DragTileVisual,
@@ -393,9 +396,6 @@ function ReturningDragTile({
   const left = useSharedValue(drag.returnFrom.left);
   const top = useSharedValue(drag.returnFrom.top);
   const hasActivated = useSharedValue(false);
-  const touchStartX = useSharedValue(0);
-  const touchStartY = useSharedValue(0);
-  const intentResolved = useSharedValue(false);
 
   useEffect(() => {
     if (drag.isPromotedToActive) {
@@ -428,59 +428,14 @@ function ReturningDragTile({
 
   if (usesVerticalDragActivation) {
     panGesture
-      .manualActivation(true)
-      .onTouchesDown((event) => {
-        "worklet";
-
-        const touch = event.changedTouches[0] ?? event.allTouches[0];
-        if (!touch) {
-          return;
-        }
-
-        touchStartX.value = touch.absoluteX;
-        touchStartY.value = touch.absoluteY;
-        intentResolved.value = false;
-      })
-      .onTouchesMove((event, stateManager) => {
-        "worklet";
-
-        if (intentResolved.value) {
-          return;
-        }
-
-        const touch = event.changedTouches[0] ?? event.allTouches[0];
-        if (!touch) {
-          return;
-        }
-
-        const intent = resolveHandPanIntent({
-          translationX: touch.absoluteX - touchStartX.value,
-          translationY: touch.absoluteY - touchStartY.value,
-        });
-
-        if (intent === "activate_drag") {
-          intentResolved.value = true;
-          stateManager.activate();
-        } else if (intent === "yield_to_scroll") {
-          intentResolved.value = true;
-          stateManager.fail();
-        }
-      })
-      .onTouchesUp((_event, stateManager) => {
-        "worklet";
-
-        if (intentResolved.value) {
-          return;
-        }
-
-        intentResolved.value = true;
-        stateManager.fail();
-      })
-      .onTouchesCancelled(() => {
-        "worklet";
-
-        intentResolved.value = true;
-      });
+      .activeOffsetY([
+        -handPanIntentThresholds.verticalActivationDistance,
+        Number.MAX_SAFE_INTEGER,
+      ])
+      .failOffsetX([
+        -handPanIntentThresholds.horizontalYieldDistance,
+        handPanIntentThresholds.horizontalYieldDistance,
+      ]);
   }
 
   panGesture
@@ -524,8 +479,6 @@ function ReturningDragTile({
         hasActivated.value = false;
         runOnJS(onReturningDragEnd)(drag.returnId);
       }
-
-      intentResolved.value = false;
     });
 
   const animatedStyle = useAnimatedStyle(() => ({
