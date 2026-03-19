@@ -1,3 +1,4 @@
+import { Button } from "@/components/Button";
 import { BoardArea } from "@/components/game/BoardArea";
 import { BoardHeader } from "@/components/game/BoardHeader";
 import { BoneyardIndicator } from "@/components/game/BoneyardIndicator";
@@ -28,8 +29,8 @@ import {
 } from "@/components/game/hand-drag-visual";
 import {
   ActiveHandDrag,
-  DrawTileAnimation,
   DragTileVisual,
+  DrawTileAnimation,
   HandTileDragStart,
   OpponentPlacementAnimation,
   PlacementTileAnimation,
@@ -157,8 +158,9 @@ function GameView({
     useState<PlacementTileAnimation | null>(null);
   const [opponentPlacementAnimation, setOpponentPlacementAnimation] =
     useState<OpponentPlacementAnimation | null>(null);
-  const [drawAnimation, setDrawAnimation] =
-    useState<DrawTileAnimation | null>(null);
+  const [drawAnimation, setDrawAnimation] = useState<DrawTileAnimation | null>(
+    null,
+  );
   const [pendingDraw, setPendingDraw] = useState<PendingDrawState | null>(null);
   const [opponentLaunchTileRect, setOpponentLaunchTileRect] =
     useState<ScreenRect | null>(null);
@@ -192,7 +194,8 @@ function GameView({
     [boneyardCount, opponentHandCount, pendingDraw, playerHand],
   );
   const displayedPlayerHand = drawPresentation.displayedPlayerHand;
-  const displayedOpponentHandCount = drawPresentation.displayedOpponentHandCount;
+  const displayedOpponentHandCount =
+    drawPresentation.displayedOpponentHandCount;
   const displayedBoneyardCount = drawPresentation.displayedBoneyardCount;
   const hasDrawActivity = pendingDraw !== null || drawAnimation !== null;
   const fivesScoringTotal = useMemo(() => {
@@ -312,7 +315,12 @@ function GameView({
           ? [drawPresentation.hiddenPlayerTileId]
           : []),
       ]),
-    [activeHandDrag, drawPresentation.hiddenPlayerTileId, placementAnimation, returningHandDrags],
+    [
+      activeHandDrag,
+      drawPresentation.hiddenPlayerTileId,
+      placementAnimation,
+      returningHandDrags,
+    ],
   );
   const highlightedTileIsDouble = useMemo(() => {
     if (draggedTileId === null) {
@@ -494,7 +502,14 @@ function GameView({
       };
       appendEvent(event);
     }
-  }, [appendEvent, currentRound, events.length, game.gameId, player1Id, startPendingDraw]);
+  }, [
+    appendEvent,
+    currentRound,
+    events.length,
+    game.gameId,
+    player1Id,
+    startPendingDraw,
+  ]);
 
   const handleHandDragStart = useCallback(
     (dragStart: HandTileDragStart) => {
@@ -1122,11 +1137,12 @@ function GameView({
           !opponentPlacementAnimation &&
           !hasDrawActivity && (
             <View style={styles.drawButtonContainer}>
-              <Pressable style={styles.drawButton} onPress={handleDraw}>
-                <Text style={styles.drawButtonText}>
-                  {displayedBoneyardCount > 0 ? "Draw Tile" : "Pass Turn"}
-                </Text>
-              </Pressable>
+              <Button
+                label={displayedBoneyardCount > 0 ? "Draw Tile" : "Pass Turn"}
+                variant="play"
+                onPress={handleDraw}
+                style={{ width: "auto" }}
+              />
             </View>
           )}
 
@@ -1471,27 +1487,11 @@ const styles = StyleSheet.create((theme) => ({
   },
   drawButtonContainer: {
     position: "absolute",
-    bottom: 120,
+    bottom: 140,
     left: 0,
     right: 0,
     alignItems: "center",
     zIndex: 20,
-  },
-  drawButton: {
-    backgroundColor: colors.blue,
-    paddingVertical: spacing[16],
-    paddingHorizontal: spacing[24],
-    borderRadius: 99,
-    shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  drawButtonText: {
-    color: colors.white,
-    ...typography.paragraph,
-    fontWeight: "600",
   },
   gradientContainer: {
     ...StyleSheet.absoluteFillObject,
@@ -1517,7 +1517,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   moreOptionsTrigger: {
     position: "absolute",
-    bottom: 160,
+    bottom: 140,
     left: spacing[16],
     width: 50,
     height: 50,
