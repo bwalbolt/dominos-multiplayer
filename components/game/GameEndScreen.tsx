@@ -192,6 +192,7 @@ export function GameEndScreen({
             variant="tertiary"
             size="compact"
             iconSource={presentation.actions.addFriend.iconSource}
+            iconPosition="start"
             onPress={onAddFriend}
           />
           <Button
@@ -199,6 +200,7 @@ export function GameEndScreen({
             variant="play"
             size="compact"
             iconSource={presentation.actions.rematch.iconSource}
+            iconPosition="start"
             onPress={onRematch}
           />
           <Button

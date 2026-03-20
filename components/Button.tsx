@@ -19,6 +19,7 @@ import Svg, {
 import { StyleSheet } from "react-native-unistyles";
 export type ButtonVariant = "default" | "secondary" | "play" | "tertiary";
 export type ButtonSize = "default" | "compact";
+export type ButtonIconPosition = "start" | "end";
 
 interface ButtonProps {
   label: string;
@@ -30,6 +31,7 @@ interface ButtonProps {
   hasIcon?: boolean;
   iconSource?: ImageProps["source"];
   iconTintColor?: string;
+  iconPosition?: ButtonIconPosition;
 }
 
 export function Button({
@@ -42,6 +44,7 @@ export function Button({
   hasIcon = false,
   iconSource,
   iconTintColor,
+  iconPosition = "end",
 }: ButtonProps) {
   const isDefault = variant === "default";
   const resolvedIconSource =
@@ -69,6 +72,14 @@ export function Button({
 
   const content = (
     <View style={styles.contentContainer}>
+      {resolvedIconSource && iconPosition === "start" && (
+        <Image
+          source={resolvedIconSource}
+          style={[styles.icon, styles.iconStart]}
+          contentFit="contain"
+          tintColor={resolvedIconTintColor}
+        />
+      )}
       <Text
         style={[
           styles.label,
@@ -83,7 +94,7 @@ export function Button({
       >
         {label}
       </Text>
-      {resolvedIconSource && (
+      {resolvedIconSource && iconPosition === "end" && (
         <Image
           source={resolvedIconSource}
           style={styles.icon}
@@ -287,6 +298,10 @@ const styles = StyleSheet.create({
     width: 16,
     height: 16,
     marginLeft: spacing[8],
+  },
+  iconStart: {
+    marginLeft: 0,
+    marginRight: spacing[8],
   },
   label: {
     textAlign: "center",
