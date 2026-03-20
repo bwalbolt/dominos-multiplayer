@@ -139,6 +139,13 @@ export const typography = {
     fontWeight: fontWeights.black,
     letterSpacing: 0,
   },
+  gameEndScoreText: {
+    fontFamily: fontFamilies.body,
+    fontSize: 50,
+    lineHeight: 50,
+    fontWeight: fontWeights.black,
+    letterSpacing: 0,
+  },
   statValueText: {
     fontFamily: fontFamilies.body,
     fontSize: 32,
@@ -234,6 +241,37 @@ export const siteGutter = spacing[24];
 export const defaultBorderRadius = spacing[8];
 export const pillBorderRadius = spacing[40];
 
+export const gameEndLayout = {
+  heroIntroTextTop: 158,
+  heroIntroBannerTop: 152,
+  heroFinalTextTop: 84,
+  heroFinalBannerTop: 50,
+  heroFrameWidth: 278,
+  heroFrameHeight: 384,
+  heroBannerWidth: 278,
+  heroBannerHeight: 326,
+  heroTextCanvasWidth: 320,
+  heroTextCanvasHeight: 112,
+  heroTextStrokeWidth: 6,
+  heroTextShadowOffset: 4,
+  heroTextShadowBlur: 4,
+  contentTop: 384,
+  gradientHeight: 400,
+  compactButtonHeight: spacing[48],
+  compactButtonRadius: spacing[32],
+  compactButtonHorizontalPadding: spacing[32],
+  compactButtonVerticalPadding: 12,
+  footerTopPadding: spacing[40],
+  footerGap: spacing[8],
+  victoryTextIntroOffsetY: 300,
+  defeatTextIntroOffsetY: -64,
+  bannerIntroOffsetY: 240,
+  victoryTextIntroScale: 0.15,
+  victoryTextOvershootScale: 1.8,
+  defeatTextIntroScale: 0.9,
+  bannerIntroScale: 0.3,
+} as const;
+
 export const designTokens = {
   colors,
   fontFamilies,
@@ -243,5 +281,6 @@ export const designTokens = {
   siteGutter,
   defaultBorderRadius,
   pillBorderRadius,
+  gameEndLayout,
   domino,
 } as const;

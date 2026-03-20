@@ -3,11 +3,16 @@ import { BoardArea } from "@/components/game/BoardArea";
 import { BoardHeader } from "@/components/game/BoardHeader";
 import { BoneyardIndicator } from "@/components/game/BoneyardIndicator";
 import { DrawTileOverlay } from "@/components/game/DrawTileOverlay";
+import { GameEndOverlay } from "@/components/game/GameEndOverlay";
 import { HandDragOverlay } from "@/components/game/HandDragOverlay";
 import { OpenEndsIndicator } from "@/components/game/OpenEndsIndicator";
 import { OpponentHand } from "@/components/game/OpponentHand";
 import { PlayerHand } from "@/components/game/PlayerHand";
 import { ScoreBurstOverlay } from "@/components/game/ScoreBurstOverlay";
+import {
+  buildLocalRematchRoute,
+  createGameEndPresentation,
+} from "@/components/game/game-end.helpers";
 import {
   PendingDrawState,
   createDrawTileAnimation,
@@ -84,7 +89,7 @@ import {
 import { colors, spacing, typography } from "@/theme/tokens";
 import { useIsFocused } from "@react-navigation/native";
 import { Image } from "expo-image";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, Text, View, useWindowDimensions } from "react-native";
 import {
@@ -114,6 +119,16 @@ type ScoreSnapshot = Readonly<{
   playerScore: number;
   opponentScore: number;
 }>;
+
+type DevScoreOffsets = Readonly<{
+  player: number;
+  opponent: number;
+}>;
+
+const DEFAULT_DEV_SCORE_OFFSETS: DevScoreOffsets = {
+  player: 0,
+  opponent: 0,
+};
 
 export default function GameScreen() {
   const { id, opponentName } = useLocalSearchParams<{
@@ -175,6 +190,7 @@ function GameView({
   tileCatalog: any;
   reconstruction: ReconstructionState;
 }) {
+  const router = useRouter();
   const player1Id = "p1" as PlayerId;
   const player2Id = "p2" as PlayerId;
 
@@ -212,11 +228,16 @@ function GameView({
     if (!currentRound || currentRound.status !== "active") return null;
     return evaluateRoundResolution(currentRound, tileCatalog);
   }, [currentRound, tileCatalog]);
+  const [devScoreOffsets, setDevScoreOffsets] =
+    useState<DevScoreOffsets>(DEFAULT_DEV_SCORE_OFFSETS);
+  const effectivePlayerScore = playerState.score + devScoreOffsets.player;
+  const effectiveOpponentScore =
+    opponentState.score + devScoreOffsets.opponent;
   const [displayedPlayerScore, setDisplayedPlayerScore] = useState(
-    playerState.score,
+    effectivePlayerScore,
   );
   const [displayedOpponentScore, setDisplayedOpponentScore] = useState(
-    opponentState.score,
+    effectiveOpponentScore,
   );
   const {
     appendEvent,
@@ -240,14 +261,14 @@ function GameView({
   const [headerActiveScoreSide, setHeaderActiveScoreSide] = useState<
     "player" | "opponent"
   >(isVisualPlayerTurn ? "player" : "opponent");
-  const playerDisplayedScoreValue = useSharedValue(playerState.score);
-  const opponentDisplayedScoreValue = useSharedValue(opponentState.score);
+  const playerDisplayedScoreValue = useSharedValue(effectivePlayerScore);
+  const opponentDisplayedScoreValue = useSharedValue(effectiveOpponentScore);
   const playerHeaderScoreScale = useSharedValue(1);
   const opponentHeaderScoreScale = useSharedValue(1);
   const previousScoreSnapshotRef = useRef<ScoreSnapshot>({
     eventCount: 0,
-    playerScore: playerState.score,
-    opponentScore: opponentState.score,
+    playerScore: effectivePlayerScore,
+    opponentScore: effectiveOpponentScore,
   });
   const skipScoreSyncRef = useRef(false);
   const sessionIdentityRef = useRef<string | null>(null);
@@ -297,6 +318,13 @@ function GameView({
   const opponentProfile = game.players.find(
     (p: any) => p.playerId === player2Id,
   );
+  const gameEndPresentation = useMemo(() => {
+    if (game.status !== "completed") {
+      return null;
+    }
+
+    return createGameEndPresentation(game, player1Id);
+  }, [game, player1Id]);
 
   const { layout, transform, onLayout, geometry, viewRef, containerOffset } =
     useBoardCamera(currentRound.board);
@@ -354,10 +382,10 @@ function GameView({
   );
   const scoreByPlayerId = useMemo(
     () => ({
-      [player1Id]: game.playerStateById[player1Id].score,
-      [player2Id]: game.playerStateById[player2Id].score,
+      [player1Id]: effectivePlayerScore,
+      [player2Id]: effectiveOpponentScore,
     }),
-    [game.playerStateById, player1Id, player2Id],
+    [effectiveOpponentScore, effectivePlayerScore, player1Id, player2Id],
   );
   const pendingScoreBurst = (() => {
     const previousSnapshot = previousScoreSnapshotRef.current;
@@ -370,14 +398,16 @@ function GameView({
       latestEvent: events[events.length - 1],
       previousPlayerScore: previousSnapshot.playerScore,
       previousOpponentScore: previousSnapshot.opponentScore,
-      nextPlayerScore: playerState.score,
-      nextOpponentScore: opponentState.score,
+      nextPlayerScore: effectivePlayerScore,
+      nextOpponentScore: effectiveOpponentScore,
       player1Id,
       player2Id,
     });
   })();
   const isScoreBurstPending =
     isScoreBurstBusy || pendingScoreBurst !== null;
+  const isGameEndOverlayVisible =
+    !isScoreBurstPending && game.status === "completed" && gameEndPresentation !== null;
 
   useEffect(() => {
     const nextSessionIdentity = events[0]?.eventId ?? null;
@@ -387,6 +417,7 @@ function GameView({
     }
 
     sessionIdentityRef.current = nextSessionIdentity;
+    setDevScoreOffsets(DEFAULT_DEV_SCORE_OFFSETS);
     previousScoreSnapshotRef.current = {
       eventCount: events.length,
       playerScore: playerState.score,
@@ -425,16 +456,16 @@ function GameView({
   useEffect(() => {
     const currentSnapshot = {
       eventCount: events.length,
-      playerScore: playerState.score,
-      opponentScore: opponentState.score,
+      playerScore: effectivePlayerScore,
+      opponentScore: effectiveOpponentScore,
     };
 
     if (previousScoreSnapshotRef.current.eventCount === 0) {
       previousScoreSnapshotRef.current = currentSnapshot;
-      playerDisplayedScoreValue.value = playerState.score;
-      opponentDisplayedScoreValue.value = opponentState.score;
-      setDisplayedPlayerScore(playerState.score);
-      setDisplayedOpponentScore(opponentState.score);
+      playerDisplayedScoreValue.value = effectivePlayerScore;
+      opponentDisplayedScoreValue.value = effectiveOpponentScore;
+      setDisplayedPlayerScore(effectivePlayerScore);
+      setDisplayedOpponentScore(effectiveOpponentScore);
       return;
     }
 
@@ -462,14 +493,14 @@ function GameView({
 
     previousScoreSnapshotRef.current = currentSnapshot;
   }, [
+    effectiveOpponentScore,
+    effectivePlayerScore,
     events,
     pendingScoreBurst,
     opponentDisplayedScoreValue,
-    opponentState.score,
     player1Id,
     player2Id,
     playerDisplayedScoreValue,
-    playerState.score,
   ]);
 
   useEffect(() => {
@@ -487,20 +518,20 @@ function GameView({
     cancelAnimation(playerHeaderScoreScale);
     cancelAnimation(opponentHeaderScoreScale);
 
-    playerDisplayedScoreValue.value = playerState.score;
-    opponentDisplayedScoreValue.value = opponentState.score;
+    playerDisplayedScoreValue.value = effectivePlayerScore;
+    opponentDisplayedScoreValue.value = effectiveOpponentScore;
     playerHeaderScoreScale.value = 1;
     opponentHeaderScoreScale.value = 1;
-    setDisplayedPlayerScore(playerState.score);
-    setDisplayedOpponentScore(opponentState.score);
+    setDisplayedPlayerScore(effectivePlayerScore);
+    setDisplayedOpponentScore(effectiveOpponentScore);
   }, [
+    effectiveOpponentScore,
+    effectivePlayerScore,
     isScoreBurstPending,
     opponentDisplayedScoreValue,
     opponentHeaderScoreScale,
-    opponentState.score,
     playerDisplayedScoreValue,
     playerHeaderScoreScale,
-    playerState.score,
   ]);
 
   useEffect(() => {
@@ -1266,15 +1297,11 @@ function GameView({
       scoreAwarded: resolution.scoreAwarded,
       scoreByPlayerId: {
         [player1Id]:
-          game.playerStateById[player1Id].score +
-          (resolution.winnerPlayerId === player1Id
-            ? resolution.scoreAwarded
-            : 0),
+          effectivePlayerScore +
+          (resolution.winnerPlayerId === player1Id ? resolution.scoreAwarded : 0),
         [player2Id]:
-          game.playerStateById[player2Id].score +
-          (resolution.winnerPlayerId === player2Id
-            ? resolution.scoreAwarded
-            : 0),
+          effectiveOpponentScore +
+          (resolution.winnerPlayerId === player2Id ? resolution.scoreAwarded : 0),
       },
       nextStartingPlayerId: resolution.winnerPlayerId || player1Id,
     };
@@ -1282,10 +1309,10 @@ function GameView({
     // 2. Check for game winner
     const nextScores = {
       [player1Id]:
-        game.playerStateById[player1Id].score +
+        effectivePlayerScore +
         (resolution.winnerPlayerId === player1Id ? resolution.scoreAwarded : 0),
       [player2Id]:
-        game.playerStateById[player2Id].score +
+        effectiveOpponentScore +
         (resolution.winnerPlayerId === player2Id ? resolution.scoreAwarded : 0),
     };
     const gameEnded = createTargetScoreGameEndedEvent({
@@ -1312,11 +1339,14 @@ function GameView({
       });
       appendEvents([roundEnded, nextRoundStarted]);
     }
+
+    setDevScoreOffsets(DEFAULT_DEV_SCORE_OFFSETS);
   }, [
     resolution,
     currentRound,
     game.gameId,
-    game.playerStateById,
+    effectiveOpponentScore,
+    effectivePlayerScore,
     game.metadata.targetScore,
     events.length,
     player1Id,
@@ -1346,8 +1376,8 @@ function GameView({
         reason: "forfeit", // Using forfeit as a "skipped" reason
         scoreAwarded: 0,
         scoreByPlayerId: {
-          [player1Id]: game.playerStateById[player1Id].score,
-          [player2Id]: game.playerStateById[player2Id].score,
+          [player1Id]: effectivePlayerScore,
+          [player2Id]: effectiveOpponentScore,
         },
         nextStartingPlayerId: player1Id,
       };
@@ -1386,41 +1416,108 @@ function GameView({
     newEvents.push(nextRoundStarted);
 
     appendEvents(newEvents);
+    setDevScoreOffsets(DEFAULT_DEV_SCORE_OFFSETS);
   }, [
     currentRound,
     game.gameId,
-    game.playerStateById,
+    effectiveOpponentScore,
+    effectivePlayerScore,
     events.length,
     player1Id,
     player2Id,
     storedSeed,
     appendEvents,
   ]);
+  const applyDevScorePreset = useCallback(
+    (nextPreset: Partial<Record<"player" | "opponent", number>>) => {
+      const nextOffsets: DevScoreOffsets = {
+        player:
+          typeof nextPreset.player === "number"
+            ? nextPreset.player - playerState.score
+            : devScoreOffsets.player,
+        opponent:
+          typeof nextPreset.opponent === "number"
+            ? nextPreset.opponent - opponentState.score
+            : devScoreOffsets.opponent,
+      };
+      const nextPlayerScore = playerState.score + nextOffsets.player;
+      const nextOpponentScore = opponentState.score + nextOffsets.opponent;
+
+      setDevScoreOffsets(nextOffsets);
+      setScoreBurstQueue([]);
+      setActiveScoreBurst(null);
+      skipScoreSyncRef.current = false;
+      previousScoreSnapshotRef.current = {
+        eventCount: events.length,
+        playerScore: nextPlayerScore,
+        opponentScore: nextOpponentScore,
+      };
+      cancelAnimation(playerDisplayedScoreValue);
+      cancelAnimation(opponentDisplayedScoreValue);
+      cancelAnimation(playerHeaderScoreScale);
+      cancelAnimation(opponentHeaderScoreScale);
+      playerDisplayedScoreValue.value = nextPlayerScore;
+      opponentDisplayedScoreValue.value = nextOpponentScore;
+      playerHeaderScoreScale.value = 1;
+      opponentHeaderScoreScale.value = 1;
+      setDisplayedPlayerScore(nextPlayerScore);
+      setDisplayedOpponentScore(nextOpponentScore);
+    },
+    [
+      devScoreOffsets.opponent,
+      devScoreOffsets.player,
+      events.length,
+      opponentDisplayedScoreValue,
+      opponentHeaderScoreScale,
+      opponentState.score,
+      playerDisplayedScoreValue,
+      playerHeaderScoreScale,
+      playerState.score,
+    ],
+  );
+  const handleAddFriend = useCallback(() => {
+    // Placeholder action until the friend flow exists.
+  }, []);
+  const handleRematch = useCallback(() => {
+    const rematchRoute = buildLocalRematchRoute(opponentProfile?.displayName);
+    router.replace(rematchRoute as any);
+  }, [opponentProfile?.displayName, router]);
+  const handleBackToHome = useCallback(() => {
+    router.replace("/(tabs)/home" as any);
+  }, [router]);
+  const handleSetPlayerScoreNinety = useCallback(() => {
+    applyDevScorePreset({ player: 90 });
+  }, [applyDevScorePreset]);
+  const handleSetOpponentScoreNinetyFive = useCallback(() => {
+    applyDevScorePreset({ opponent: 95 });
+  }, [applyDevScorePreset]);
 
   return (
     <View style={styles.container}>
-      <Pressable
-        style={({ pressed }) => [
-          styles.moreOptionsTrigger,
-          pressed && styles.moreOptionsTriggerPressed,
-        ]}
-        onPress={() => setShowDevTools(!showDevTools)}
-      >
-        <View style={styles.moreOptions}>
-          <Image
-            source={require("@/assets/images/icons/nav-more.svg")}
-            style={styles.moreIcon}
-            contentFit="contain"
-          />
-        </View>
-      </Pressable>
+      {!isGameEndOverlayVisible && (
+        <Pressable
+          style={({ pressed }) => [
+            styles.moreOptionsTrigger,
+            pressed && styles.moreOptionsTriggerPressed,
+          ]}
+          onPress={() => setShowDevTools(!showDevTools)}
+        >
+          <View style={styles.moreOptions}>
+            <Image
+              source={require("@/assets/images/icons/nav-more.svg")}
+              style={styles.moreIcon}
+              contentFit="contain"
+            />
+          </View>
+        </Pressable>
+      )}
 
       <BoardHeader
         opponentName={opponentProfile?.displayName || "Opponent"}
         opponentTitle="Novice" // Static for now as per Figma
         opponentAvatar={require("@/assets/images/avatar(9).png")}
-        playerScore={playerState.score}
-        opponentScore={opponentState.score}
+        playerScore={effectivePlayerScore}
+        opponentScore={effectiveOpponentScore}
         activeScoreSide={headerActiveScoreSide}
         displayedPlayerScore={displayedPlayerScore}
         displayedOpponentScore={displayedOpponentScore}
@@ -1617,7 +1714,7 @@ function GameView({
         onAnimationComplete={handleScoreBurstComplete}
       />
 
-      {showDevTools && (
+      {showDevTools && !isGameEndOverlayVisible && (
         <View style={styles.devTools}>
           <View style={styles.devHeader}>
             <Text style={styles.devTitle}>Developer Tools</Text>
@@ -1635,6 +1732,20 @@ function GameView({
 
             <Pressable style={styles.devButton} onPress={forceHands}>
               <Text style={styles.devButtonText}>Force Hands (Test)</Text>
+            </Pressable>
+
+            <Pressable
+              style={styles.devButton}
+              onPress={handleSetPlayerScoreNinety}
+            >
+              <Text style={styles.devButtonText}>Player score 90</Text>
+            </Pressable>
+
+            <Pressable
+              style={styles.devButton}
+              onPress={handleSetOpponentScoreNinetyFive}
+            >
+              <Text style={styles.devButtonText}>Opponent score 95</Text>
             </Pressable>
 
             <Pressable
@@ -1686,31 +1797,13 @@ function GameView({
           </View>
         </View>
       )}
-      {/* Game Resolution Overlay */}
-      {!isScoreBurstPending && game.status === "completed" && (
-        <View style={styles.resolutionOverlay}>
-          <View style={styles.resolutionCard}>
-            <Text style={styles.resolutionTitle}>Game Over!</Text>
-            <Text style={styles.resolutionWinner}>
-              {game.winnerPlayerId === player1Id
-                ? "You Won the Match!"
-                : "Opponent Won the Match!"}
-            </Text>
-            <View style={styles.resolutionScoreRow}>
-              <Text style={styles.resolutionScoreLabel}>Final Score:</Text>
-              <Text style={styles.resolutionScoreValue}>
-                {game.playerStateById[player1Id].score} -{" "}
-                {game.playerStateById[player2Id].score}
-              </Text>
-            </View>
-            <Pressable
-              style={styles.advanceButton}
-              onPress={() => initialize(storedSeed || 123)}
-            >
-              <Text style={styles.advanceButtonText}>Play Again</Text>
-            </Pressable>
-          </View>
-        </View>
+      {isGameEndOverlayVisible && gameEndPresentation && (
+        <GameEndOverlay
+          presentation={gameEndPresentation}
+          onAddFriend={handleAddFriend}
+          onRematch={handleRematch}
+          onBackToHome={handleBackToHome}
+        />
       )}
     </View>
   );
