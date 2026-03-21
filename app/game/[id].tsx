@@ -387,6 +387,7 @@ function GameView({
     }),
     [effectiveOpponentScore, effectivePlayerScore, player1Id, player2Id],
   );
+  const gameSessionIdentity = game.gameId ?? events[0]?.gameId ?? null;
   const pendingScoreBurst = (() => {
     const previousSnapshot = previousScoreSnapshotRef.current;
 
@@ -410,13 +411,11 @@ function GameView({
     !isScoreBurstPending && game.status === "completed" && gameEndPresentation !== null;
 
   useEffect(() => {
-    const nextSessionIdentity = events[0]?.eventId ?? null;
-
-    if (sessionIdentityRef.current === nextSessionIdentity) {
+    if (sessionIdentityRef.current === gameSessionIdentity) {
       return;
     }
 
-    sessionIdentityRef.current = nextSessionIdentity;
+    sessionIdentityRef.current = gameSessionIdentity;
     setDevScoreOffsets(DEFAULT_DEV_SCORE_OFFSETS);
     previousScoreSnapshotRef.current = {
       eventCount: events.length,
@@ -432,6 +431,7 @@ function GameView({
     setDisplayedOpponentScore(opponentState.score);
   }, [
     events,
+    gameSessionIdentity,
     isVisualPlayerTurn,
     opponentDisplayedScoreValue,
     opponentState.score,

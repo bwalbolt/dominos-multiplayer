@@ -1,14 +1,14 @@
 import React from "react";
 import { View } from "react-native";
-import TestRenderer, {
-  act,
-} from "jest-expo/node_modules/react-test-renderer";
-
+// eslint-disable-next-line import/no-unresolved
+import * as TestRenderer from "react-test-renderer";
 import {
   DominoTile,
   DominoTileHighlightShell,
   FacedownDominoTile,
 } from "../domino-tile";
+
+const { act } = TestRenderer;
 
 describe("domino-tile", () => {
   it("renders skia tile variants for pip and numeral faces", async () => {

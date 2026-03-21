@@ -1,5 +1,5 @@
 import { TileDrawnEvent } from "@/src/game-domain/events/schema";
-import { EventId, PlayerId, RoundId, TileId } from "@/src/game-domain/types";
+import { EventId, GameId, PlayerId, RoundId, TileId } from "@/src/game-domain/types";
 
 import {
   PendingDrawState,
@@ -15,7 +15,7 @@ describe("draw tile animation helpers", () => {
     actor,
     event: {
       eventId: "event-1" as EventId,
-      gameId: "game-1",
+      gameId: "game-1" as GameId,
       eventSeq: 4,
       type: "TILE_DRAWN",
       version: 1,
