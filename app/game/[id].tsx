@@ -1,10 +1,24 @@
+import { Button } from "@/components/Button";
 import { BoardArea } from "@/components/game/BoardArea";
 import { BoardHeader } from "@/components/game/BoardHeader";
 import { BoneyardIndicator } from "@/components/game/BoneyardIndicator";
+import { DrawTileOverlay } from "@/components/game/DrawTileOverlay";
+import { GameEndOverlay } from "@/components/game/GameEndOverlay";
 import { HandDragOverlay } from "@/components/game/HandDragOverlay";
 import { OpenEndsIndicator } from "@/components/game/OpenEndsIndicator";
 import { OpponentHand } from "@/components/game/OpponentHand";
 import { PlayerHand } from "@/components/game/PlayerHand";
+import { ScoreBurstOverlay } from "@/components/game/ScoreBurstOverlay";
+import {
+  buildLocalRematchRoute,
+  createGameEndPresentation,
+} from "@/components/game/game-end.helpers";
+import {
+  PendingDrawState,
+  createDrawTileAnimation,
+  resolveCompletedDrawEvent,
+  resolveDrawPresentation,
+} from "@/components/game/draw-tile-animation";
 import {
   createActiveHandDrag,
   createPromotedActiveHandDrag,
@@ -22,6 +36,7 @@ import {
 import {
   ActiveHandDrag,
   DragTileVisual,
+  DrawTileAnimation,
   HandTileDragStart,
   OpponentPlacementAnimation,
   PlacementTileAnimation,
@@ -29,11 +44,19 @@ import {
   ScreenPoint,
   ScreenRect,
 } from "@/components/game/hand-drag.types";
+import {
+  detectScoreBurstFromTilePlayed,
+  getScoreBurstTargetRect,
+} from "@/components/game/score-burst.helpers";
+import type {
+  ActiveScoreBurst,
+  PendingScoreBurst,
+} from "@/components/game/score-burst.helpers";
+import { resolveVisualTurnPlayerId } from "@/components/game/visual-turn.helpers";
 import { getComputerAction } from "@/src/game-domain/computer-player";
 import {
   GameEvent,
   RoundEndedEvent,
-  TileDrawnEvent,
   TilePlayedEvent,
   TurnPassedEvent,
 } from "@/src/game-domain/events/schema";
@@ -66,9 +89,19 @@ import {
 import { colors, spacing, typography } from "@/theme/tokens";
 import { useIsFocused } from "@react-navigation/native";
 import { Image } from "expo-image";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { Pressable, ScrollView, Text, View, useWindowDimensions } from "react-native";
+import {
+  Easing,
+  cancelAnimation,
+  runOnJS,
+  useAnimatedReaction,
+  useSharedValue,
+  withDelay,
+  withSequence,
+  withTiming,
+} from "react-native-reanimated";
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 import { StyleSheet } from "react-native-unistyles";
 
@@ -77,6 +110,25 @@ const OPPONENT_PLAY_INTRO_DURATION_MS = 400;
 const OPPONENT_PLAY_SETTLE_DURATION_MS = 400;
 const OPPONENT_PLAY_INTRO_TRAVEL_PX = 100;
 const OPPONENT_PLAY_INTRO_CLEARANCE_PX = 48;
+const SCORE_BURST_HEADER_COUNT_DELAY_MS = 1850;
+const SCORE_BURST_HEADER_COUNT_DURATION_MS = 150;
+const HEADER_ACTIVE_COLOR_SWAP_DELAY_MS = 500;
+
+type ScoreSnapshot = Readonly<{
+  eventCount: number;
+  playerScore: number;
+  opponentScore: number;
+}>;
+
+type DevScoreOffsets = Readonly<{
+  player: number;
+  opponent: number;
+}>;
+
+const DEFAULT_DEV_SCORE_OFFSETS: DevScoreOffsets = {
+  player: 0,
+  opponent: 0,
+};
 
 export default function GameScreen() {
   const { id, opponentName } = useLocalSearchParams<{
@@ -138,6 +190,7 @@ function GameView({
   tileCatalog: any;
   reconstruction: ReconstructionState;
 }) {
+  const router = useRouter();
   const player1Id = "p1" as PlayerId;
   const player2Id = "p2" as PlayerId;
 
@@ -150,8 +203,78 @@ function GameView({
     useState<PlacementTileAnimation | null>(null);
   const [opponentPlacementAnimation, setOpponentPlacementAnimation] =
     useState<OpponentPlacementAnimation | null>(null);
+  const [drawAnimation, setDrawAnimation] = useState<DrawTileAnimation | null>(
+    null,
+  );
+  const [pendingDraw, setPendingDraw] = useState<PendingDrawState | null>(null);
   const [opponentLaunchTileRect, setOpponentLaunchTileRect] =
     useState<ScreenRect | null>(null);
+  const [boneyardRect, setBoneyardRect] = useState<ScreenRect | null>(null);
+  const [playerDrawTargetRect, setPlayerDrawTargetRect] =
+    useState<ScreenRect | null>(null);
+  const [opponentDrawTargetRect, setOpponentDrawTargetRect] =
+    useState<ScreenRect | null>(null);
+  const boneyardIndicatorRef = useRef<View | null>(null);
+  const [playerScoreRect, setPlayerScoreRect] = useState<ScreenRect | null>(null);
+  const [opponentScoreRect, setOpponentScoreRect] = useState<ScreenRect | null>(
+    null,
+  );
+  const [scoreBurstQueue, setScoreBurstQueue] = useState<
+    readonly PendingScoreBurst[]
+  >([]);
+  const [activeScoreBurst, setActiveScoreBurst] =
+    useState<ActiveScoreBurst | null>(null);
+  const resolution = useMemo(() => {
+    if (!currentRound || currentRound.status !== "active") return null;
+    return evaluateRoundResolution(currentRound, tileCatalog);
+  }, [currentRound, tileCatalog]);
+  const [devScoreOffsets, setDevScoreOffsets] =
+    useState<DevScoreOffsets>(DEFAULT_DEV_SCORE_OFFSETS);
+  const effectivePlayerScore = playerState.score + devScoreOffsets.player;
+  const effectiveOpponentScore =
+    opponentState.score + devScoreOffsets.opponent;
+  const [displayedPlayerScore, setDisplayedPlayerScore] = useState(
+    effectivePlayerScore,
+  );
+  const [displayedOpponentScore, setDisplayedOpponentScore] = useState(
+    effectiveOpponentScore,
+  );
+  const {
+    appendEvent,
+    appendEvents,
+    events,
+    initialize,
+    seed: storedSeed,
+  } = useLocalSessionStore();
+  const authoritativeActivePlayerId = game.turn?.activePlayerId ?? null;
+  const isPlayerTurn = authoritativeActivePlayerId === player1Id;
+  const visualTurnPlayerId = useMemo(
+    () =>
+      resolveVisualTurnPlayerId({
+        game,
+        events,
+        hasPendingRoundResolution: resolution !== null,
+      }),
+    [events, game, resolution],
+  );
+  const isVisualPlayerTurn = visualTurnPlayerId === player1Id;
+  const [headerActiveScoreSide, setHeaderActiveScoreSide] = useState<
+    "player" | "opponent"
+  >(isVisualPlayerTurn ? "player" : "opponent");
+  const playerDisplayedScoreValue = useSharedValue(effectivePlayerScore);
+  const opponentDisplayedScoreValue = useSharedValue(effectiveOpponentScore);
+  const playerHeaderScoreScale = useSharedValue(1);
+  const opponentHeaderScoreScale = useSharedValue(1);
+  const previousScoreSnapshotRef = useRef<ScoreSnapshot>({
+    eventCount: 0,
+    playerScore: effectivePlayerScore,
+    opponentScore: effectiveOpponentScore,
+  });
+  const skipScoreSyncRef = useRef(false);
+  const sessionIdentityRef = useRef<string | null>(null);
+  const windowSize = useWindowDimensions();
+  const isScoreBurstBusy =
+    activeScoreBurst !== null || scoreBurstQueue.length > 0;
 
   const { playerHandIds, playerHand } = useMemo(() => {
     const ids = currentRound.handsByPlayerId[player1Id]?.tileIds || [];
@@ -165,20 +288,43 @@ function GameView({
   const opponentHandCount =
     currentRound.handsByPlayerId[player2Id]?.handCount || 0;
   const boneyardCount = currentRound.boneyard.remainingCount;
+  const drawPresentation = useMemo(
+    () =>
+      resolveDrawPresentation({
+        playerHand,
+        opponentHandCount,
+        boneyardCount,
+        pendingDraw,
+      }),
+    [boneyardCount, opponentHandCount, pendingDraw, playerHand],
+  );
+  const displayedPlayerHand = drawPresentation.displayedPlayerHand;
+  const displayedOpponentHandCount =
+    drawPresentation.displayedOpponentHandCount;
+  const displayedBoneyardCount = drawPresentation.displayedBoneyardCount;
+  const hasDrawActivity = pendingDraw !== null || drawAnimation !== null;
   const fivesScoringTotal = useMemo(() => {
     return calculateFivesScoringTotal(currentRound.board);
   }, [currentRound.board]);
-  const isPlayerTurn = game.turn?.activePlayerId === player1Id;
   const isBoardInteractionEnabled =
     isPlayerTurn &&
     isScreenFocused &&
+    !isScoreBurstBusy &&
     !isBoardTransitionActive &&
     placementAnimation === null &&
-    opponentPlacementAnimation === null;
+    opponentPlacementAnimation === null &&
+    !hasDrawActivity;
 
   const opponentProfile = game.players.find(
     (p: any) => p.playerId === player2Id,
   );
+  const gameEndPresentation = useMemo(() => {
+    if (game.status !== "completed") {
+      return null;
+    }
+
+    return createGameEndPresentation(game, player1Id);
+  }, [game, player1Id]);
 
   const { layout, transform, onLayout, geometry, viewRef, containerOffset } =
     useBoardCamera(currentRound.board);
@@ -212,13 +358,23 @@ function GameView({
     isBoardInteractionEnabled,
   );
 
-  const {
-    appendEvent,
-    appendEvents,
-    events,
-    initialize,
-    seed: storedSeed,
-  } = useLocalSessionStore();
+  useAnimatedReaction(
+    () => Math.round(playerDisplayedScoreValue.value),
+    (nextValue, previousValue) => {
+      if (nextValue !== previousValue) {
+        runOnJS(setDisplayedPlayerScore)(nextValue);
+      }
+    },
+  );
+
+  useAnimatedReaction(
+    () => Math.round(opponentDisplayedScoreValue.value),
+    (nextValue, previousValue) => {
+      if (nextValue !== previousValue) {
+        runOnJS(setDisplayedOpponentScore)(nextValue);
+      }
+    },
+  );
 
   const playableTileIds = useMemo(
     () => new Set(legalMoves.map((m) => m.tileId)),
@@ -226,11 +382,239 @@ function GameView({
   );
   const scoreByPlayerId = useMemo(
     () => ({
-      [player1Id]: game.playerStateById[player1Id].score,
-      [player2Id]: game.playerStateById[player2Id].score,
+      [player1Id]: effectivePlayerScore,
+      [player2Id]: effectiveOpponentScore,
     }),
-    [game.playerStateById, player1Id, player2Id],
+    [effectiveOpponentScore, effectivePlayerScore, player1Id, player2Id],
   );
+  const gameSessionIdentity = game.gameId ?? events[0]?.gameId ?? null;
+  const pendingScoreBurst = (() => {
+    const previousSnapshot = previousScoreSnapshotRef.current;
+
+    if (events.length === previousSnapshot.eventCount) {
+      return null;
+    }
+
+    return detectScoreBurstFromTilePlayed({
+      latestEvent: events[events.length - 1],
+      previousPlayerScore: previousSnapshot.playerScore,
+      previousOpponentScore: previousSnapshot.opponentScore,
+      nextPlayerScore: effectivePlayerScore,
+      nextOpponentScore: effectiveOpponentScore,
+      player1Id,
+      player2Id,
+    });
+  })();
+  const isScoreBurstPending =
+    isScoreBurstBusy || pendingScoreBurst !== null;
+  const isGameEndOverlayVisible =
+    !isScoreBurstPending && game.status === "completed" && gameEndPresentation !== null;
+
+  useEffect(() => {
+    if (sessionIdentityRef.current === gameSessionIdentity) {
+      return;
+    }
+
+    sessionIdentityRef.current = gameSessionIdentity;
+    setDevScoreOffsets(DEFAULT_DEV_SCORE_OFFSETS);
+    previousScoreSnapshotRef.current = {
+      eventCount: events.length,
+      playerScore: playerState.score,
+      opponentScore: opponentState.score,
+    };
+    setScoreBurstQueue([]);
+    setActiveScoreBurst(null);
+    setHeaderActiveScoreSide(isVisualPlayerTurn ? "player" : "opponent");
+    playerDisplayedScoreValue.value = playerState.score;
+    opponentDisplayedScoreValue.value = opponentState.score;
+    setDisplayedPlayerScore(playerState.score);
+    setDisplayedOpponentScore(opponentState.score);
+  }, [
+    events,
+    gameSessionIdentity,
+    isVisualPlayerTurn,
+    opponentDisplayedScoreValue,
+    opponentState.score,
+    playerDisplayedScoreValue,
+    playerState.score,
+  ]);
+
+  useEffect(() => {
+    if (isScoreBurstPending) {
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      setHeaderActiveScoreSide(isVisualPlayerTurn ? "player" : "opponent");
+    }, HEADER_ACTIVE_COLOR_SWAP_DELAY_MS);
+
+    return () => {
+      clearTimeout(timeoutId);
+    };
+  }, [isScoreBurstPending, isVisualPlayerTurn]);
+
+  useEffect(() => {
+    const currentSnapshot = {
+      eventCount: events.length,
+      playerScore: effectivePlayerScore,
+      opponentScore: effectiveOpponentScore,
+    };
+
+    if (previousScoreSnapshotRef.current.eventCount === 0) {
+      previousScoreSnapshotRef.current = currentSnapshot;
+      playerDisplayedScoreValue.value = effectivePlayerScore;
+      opponentDisplayedScoreValue.value = effectiveOpponentScore;
+      setDisplayedPlayerScore(effectivePlayerScore);
+      setDisplayedOpponentScore(effectiveOpponentScore);
+      return;
+    }
+
+    if (events.length === previousScoreSnapshotRef.current.eventCount) {
+      return;
+    }
+
+    const previousSnapshot = previousScoreSnapshotRef.current;
+    const nextScoreBurst = pendingScoreBurst;
+
+    if (nextScoreBurst) {
+      skipScoreSyncRef.current = true;
+      playerDisplayedScoreValue.value = previousSnapshot.playerScore;
+      opponentDisplayedScoreValue.value = previousSnapshot.opponentScore;
+      setDisplayedPlayerScore(previousSnapshot.playerScore);
+      setDisplayedOpponentScore(previousSnapshot.opponentScore);
+      setScoreBurstQueue((currentQueue) => {
+        if (currentQueue.some((burst) => burst.id === nextScoreBurst.id)) {
+          return currentQueue;
+        }
+
+        return [...currentQueue, nextScoreBurst];
+      });
+    }
+
+    previousScoreSnapshotRef.current = currentSnapshot;
+  }, [
+    effectiveOpponentScore,
+    effectivePlayerScore,
+    events,
+    pendingScoreBurst,
+    opponentDisplayedScoreValue,
+    player1Id,
+    player2Id,
+    playerDisplayedScoreValue,
+  ]);
+
+  useEffect(() => {
+    if (skipScoreSyncRef.current) {
+      skipScoreSyncRef.current = false;
+      return;
+    }
+
+    if (isScoreBurstPending) {
+      return;
+    }
+
+    cancelAnimation(playerDisplayedScoreValue);
+    cancelAnimation(opponentDisplayedScoreValue);
+    cancelAnimation(playerHeaderScoreScale);
+    cancelAnimation(opponentHeaderScoreScale);
+
+    playerDisplayedScoreValue.value = effectivePlayerScore;
+    opponentDisplayedScoreValue.value = effectiveOpponentScore;
+    playerHeaderScoreScale.value = 1;
+    opponentHeaderScoreScale.value = 1;
+    setDisplayedPlayerScore(effectivePlayerScore);
+    setDisplayedOpponentScore(effectiveOpponentScore);
+  }, [
+    effectiveOpponentScore,
+    effectivePlayerScore,
+    isScoreBurstPending,
+    opponentDisplayedScoreValue,
+    opponentHeaderScoreScale,
+    playerDisplayedScoreValue,
+    playerHeaderScoreScale,
+  ]);
+
+  useEffect(() => {
+    if (activeScoreBurst || scoreBurstQueue.length === 0) {
+      return;
+    }
+
+    const nextScoreBurst = scoreBurstQueue[0];
+    const targetRect = getScoreBurstTargetRect(
+      nextScoreBurst.side,
+      playerScoreRect,
+      opponentScoreRect,
+    );
+
+    if (!targetRect) {
+      return;
+    }
+
+    setActiveScoreBurst({
+      ...nextScoreBurst,
+      targetRect,
+    });
+    setScoreBurstQueue((currentQueue) => currentQueue.slice(1));
+  }, [activeScoreBurst, opponentScoreRect, playerScoreRect, scoreBurstQueue]);
+
+  useEffect(() => {
+    if (!activeScoreBurst) {
+      return;
+    }
+
+    const targetScoreValue =
+      activeScoreBurst.side === "player"
+        ? playerDisplayedScoreValue
+        : opponentDisplayedScoreValue;
+    const targetScoreScale =
+      activeScoreBurst.side === "player"
+        ? playerHeaderScoreScale
+        : opponentHeaderScoreScale;
+    const otherScoreScale =
+      activeScoreBurst.side === "player"
+        ? opponentHeaderScoreScale
+        : playerHeaderScoreScale;
+
+    cancelAnimation(targetScoreValue);
+    cancelAnimation(targetScoreScale);
+    cancelAnimation(otherScoreScale);
+
+    targetScoreValue.value = activeScoreBurst.fromScore;
+    targetScoreScale.value = 1;
+    otherScoreScale.value = 1;
+    targetScoreValue.value = withDelay(
+      SCORE_BURST_HEADER_COUNT_DELAY_MS,
+      withTiming(activeScoreBurst.toScore, {
+        duration: SCORE_BURST_HEADER_COUNT_DURATION_MS,
+        easing: Easing.out(Easing.cubic),
+      }),
+    );
+    targetScoreScale.value = withDelay(
+      SCORE_BURST_HEADER_COUNT_DELAY_MS,
+      withSequence(
+        withTiming(1.12, {
+          duration: SCORE_BURST_HEADER_COUNT_DURATION_MS / 2,
+          easing: Easing.out(Easing.quad),
+        }),
+        withTiming(1, {
+          duration: SCORE_BURST_HEADER_COUNT_DURATION_MS / 2,
+          easing: Easing.in(Easing.quad),
+        }),
+      ),
+    );
+
+    return () => {
+      cancelAnimation(targetScoreValue);
+      cancelAnimation(targetScoreScale);
+    };
+  }, [
+    activeScoreBurst,
+    opponentDisplayedScoreValue,
+    opponentHeaderScoreScale,
+    playerDisplayedScoreValue,
+    playerHeaderScoreScale,
+  ]);
+
   const autoEndedScoreEventCountRef = useRef<number | null>(null);
   const [activeHandDrag, setActiveHandDrag] = useState<ActiveHandDrag | null>(
     null,
@@ -241,8 +625,10 @@ function GameView({
   const activeHandDragRef = useRef<ActiveHandDrag | null>(null);
   const returningHandDragsRef = useRef<ReturningHandDrag[]>([]);
   const currentDragVisualRef = useRef<DragTileVisual | null>(null);
+  const pendingDrawRef = useRef<PendingDrawState | null>(null);
   const nextReturnIdRef = useRef(0);
   const nextPlacementIdRef = useRef(0);
+  const nextDrawIdRef = useRef(0);
   const pendingPlacementEventRef = useRef<TilePlayedEvent | null>(null);
   const pendingOpponentPlayEventRef = useRef<TilePlayedEvent | null>(null);
   const placementPauseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -275,8 +661,16 @@ function GameView({
       new Set([
         ...getHiddenHandTileIds(activeHandDrag, returningHandDrags),
         ...(placementAnimation ? [placementAnimation.tileId] : []),
+        ...(drawPresentation.hiddenPlayerTileId
+          ? [drawPresentation.hiddenPlayerTileId]
+          : []),
       ]),
-    [activeHandDrag, placementAnimation, returningHandDrags],
+    [
+      activeHandDrag,
+      drawPresentation.hiddenPlayerTileId,
+      placementAnimation,
+      returningHandDrags,
+    ],
   );
   const highlightedTileIsDouble = useMemo(() => {
     if (draggedTileId === null) {
@@ -286,11 +680,12 @@ function GameView({
     const draggedTile = tileCatalog[draggedTileId];
     return draggedTile ? draggedTile.sideA === draggedTile.sideB : false;
   }, [draggedTileId, tileCatalog]);
-  const usesVerticalDragActivation = playerHand.length >= 8;
+  const usesVerticalDragActivation = displayedPlayerHand.length >= 8;
 
   activeHandDragRef.current = activeHandDrag;
   returningHandDragsRef.current = [...returningHandDrags];
   currentDragVisualRef.current = currentDragVisual;
+  pendingDrawRef.current = pendingDraw;
 
   useEffect(() => {
     if (isScreenFocused) {
@@ -302,6 +697,7 @@ function GameView({
     currentDragVisualRef.current = null;
     pendingPlacementEventRef.current = null;
     pendingOpponentPlayEventRef.current = null;
+    pendingDrawRef.current = null;
     if (placementPauseTimeoutRef.current) {
       clearTimeout(placementPauseTimeoutRef.current);
       placementPauseTimeoutRef.current = null;
@@ -309,7 +705,12 @@ function GameView({
     setActiveHandDrag(null);
     setPlacementAnimation(null);
     setOpponentPlacementAnimation(null);
+    setDrawAnimation(null);
+    setPendingDraw(null);
     setOpponentLaunchTileRect(null);
+    setBoneyardRect(null);
+    setPlayerDrawTargetRect(null);
+    setOpponentDrawTargetRect(null);
     setReturningHandDrags([]);
   }, [isScreenFocused]);
 
@@ -323,24 +724,119 @@ function GameView({
     return `placement-${nextPlacementIdRef.current}`;
   }, []);
 
+  const createNextDrawId = useCallback(() => {
+    nextDrawIdRef.current += 1;
+    return `draw-${nextDrawIdRef.current}`;
+  }, []);
+
+  const measureBoneyardRect = useCallback(() => {
+    const boneyardIndicator = boneyardIndicatorRef.current;
+    if (!boneyardIndicator) {
+      setBoneyardRect(null);
+      return;
+    }
+
+    boneyardIndicator.measureInWindow((x, y, width, height) => {
+      setBoneyardRect({ x, y, width, height });
+    });
+  }, []);
+
+  useEffect(() => {
+    let delayedFrameId: number | null = null;
+    const frameId = requestAnimationFrame(measureBoneyardRect);
+    const timeoutId = setTimeout(() => {
+      delayedFrameId = requestAnimationFrame(measureBoneyardRect);
+    }, 50);
+
+    return () => {
+      cancelAnimationFrame(frameId);
+      if (delayedFrameId !== null) {
+        cancelAnimationFrame(delayedFrameId);
+      }
+      clearTimeout(timeoutId);
+    };
+  }, [displayedBoneyardCount, measureBoneyardRect]);
+
+  const startPendingDraw = useCallback(
+    (actor: PendingDrawState["actor"], playerId: PlayerId) => {
+      const tileId = currentRound?.boneyard.remainingTileIds[0];
+      if (!tileId) {
+        return false;
+      }
+
+      const tile = tileCatalog[tileId];
+      if (!tile) {
+        return false;
+      }
+
+      const nextPendingDraw: PendingDrawState = {
+        actor,
+        event: {
+          eventId: Math.random().toString(36).substring(7) as EventId,
+          gameId: game.gameId,
+          eventSeq: events.length + 1,
+          type: "TILE_DRAWN",
+          version: 1,
+          occurredAt: new Date().toISOString(),
+          playerId,
+          roundId: currentRound.roundId,
+          tileId,
+          source: "boneyard",
+        },
+        tile: {
+          id: tileId,
+          value1: tile.sideA,
+          value2: tile.sideB,
+        },
+      };
+
+      pendingDrawRef.current = nextPendingDraw;
+      setPendingDraw(nextPendingDraw);
+      setDrawAnimation(null);
+      setPlayerDrawTargetRect(null);
+      setOpponentDrawTargetRect(null);
+      return true;
+    },
+    [currentRound, events.length, game.gameId, tileCatalog],
+  );
+
+  useEffect(() => {
+    if (!pendingDraw || drawAnimation || !boneyardRect) {
+      return;
+    }
+
+    const targetRect =
+      pendingDraw.actor === "player"
+        ? playerDrawTargetRect
+        : opponentDrawTargetRect;
+    if (!targetRect) {
+      return;
+    }
+
+    setDrawAnimation(
+      createDrawTileAnimation({
+        animationId: createNextDrawId(),
+        tile: pendingDraw.tile,
+        destinationRect: targetRect,
+        boneyardRect,
+        faceMode: pendingDraw.actor === "player" ? "front" : "back",
+      }),
+    );
+  }, [
+    boneyardRect,
+    createNextDrawId,
+    drawAnimation,
+    opponentDrawTargetRect,
+    pendingDraw,
+    playerDrawTargetRect,
+  ]);
+
   const handleDraw = useCallback(() => {
     if (!currentRound) return;
     const tileId = currentRound.boneyard.remainingTileIds[0];
 
     if (tileId) {
-      const event: TileDrawnEvent = {
-        eventId: Math.random().toString(36).substring(7) as EventId,
-        gameId: game.gameId,
-        eventSeq: events.length + 1,
-        type: "TILE_DRAWN",
-        version: 1,
-        occurredAt: new Date().toISOString(),
-        playerId: player1Id,
-        roundId: currentRound.roundId,
-        tileId,
-        source: "boneyard",
-      };
-      appendEvent(event);
+      startPendingDraw("player", player1Id);
     } else {
       // Boneyard empty, pass turn
       const event: TurnPassedEvent = {
@@ -356,7 +852,14 @@ function GameView({
       };
       appendEvent(event);
     }
-  }, [currentRound, game.gameId, events.length, player1Id, appendEvent]);
+  }, [
+    appendEvent,
+    currentRound,
+    events.length,
+    game.gameId,
+    player1Id,
+    startPendingDraw,
+  ]);
 
   const handleHandDragStart = useCallback(
     (dragStart: HandTileDragStart) => {
@@ -517,6 +1020,28 @@ function GameView({
     [appendEvent],
   );
 
+  const handleDrawAnimationComplete = useCallback(
+    (animationId: string) => {
+      const event = resolveCompletedDrawEvent({
+        pendingDraw: pendingDrawRef.current,
+        drawAnimation,
+        completedAnimationId: animationId,
+      });
+
+      if (!event) {
+        return;
+      }
+
+      pendingDrawRef.current = null;
+      setDrawAnimation(null);
+      setPendingDraw(null);
+      setPlayerDrawTargetRect(null);
+      setOpponentDrawTargetRect(null);
+      appendEvent(event);
+    },
+    [appendEvent, drawAnimation],
+  );
+
   const handleOpponentPlacementAnimationComplete = useCallback(
     (animationId: string) => {
       setOpponentPlacementAnimation((current) => {
@@ -536,6 +1061,16 @@ function GameView({
     },
     [appendEvent],
   );
+
+  const handleScoreBurstComplete = useCallback((burstId: string) => {
+    setActiveScoreBurst((current) => {
+      if (!current || current.id !== burstId) {
+        return current;
+      }
+
+      return null;
+    });
+  }, []);
 
   const handleReturningDragStart = useCallback(
     (
@@ -599,16 +1134,12 @@ function GameView({
 
   const [showDevTools, setShowDevTools] = useState(false);
 
-  const resolution = useMemo(() => {
-    if (!currentRound || currentRound.status !== "active") return null;
-    return evaluateRoundResolution(currentRound, tileCatalog);
-  }, [currentRound, tileCatalog]);
-
   useEffect(() => {
     if (
       game.status !== "active" ||
       currentRound.status !== "active" ||
-      resolution !== null
+      resolution !== null ||
+      isScoreBurstPending
     ) {
       autoEndedScoreEventCountRef.current = null;
       return;
@@ -643,6 +1174,7 @@ function GameView({
     game.gameId,
     game.metadata.targetScore,
     game.status,
+    isScoreBurstPending,
     resolution,
     scoreByPlayerId,
   ]);
@@ -652,14 +1184,18 @@ function GameView({
     const isComputerTurn = game.turn?.activePlayerId === player2Id;
     const isRoundActive = currentRound.status === "active";
     const noResolutionPending = !resolution;
+    const noScoreBurstPending = !isScoreBurstPending;
     const hasPendingOpponentPlay =
       pendingOpponentPlayEventRef.current !== null ||
-      opponentPlacementAnimation !== null;
+      opponentPlacementAnimation !== null ||
+      pendingDraw !== null ||
+      drawAnimation !== null;
 
     if (
       isComputerTurn &&
       isRoundActive &&
       noResolutionPending &&
+      noScoreBurstPending &&
       !hasPendingOpponentPlay
     ) {
       const timer = setTimeout(() => {
@@ -699,19 +1235,7 @@ function GameView({
         } else if (action.kind === "draw") {
           const tileId = currentRound.boneyard.remainingTileIds[0];
           if (tileId) {
-            const event: TileDrawnEvent = {
-              eventId: Math.random().toString(36).substring(7) as EventId,
-              gameId: game.gameId,
-              eventSeq: events.length + 1,
-              type: "TILE_DRAWN",
-              version: 1,
-              occurredAt: new Date().toISOString(),
-              playerId: player2Id,
-              roundId: currentRound.roundId,
-              tileId,
-              source: "boneyard",
-            };
-            appendEvent(event);
+            startPendingDraw("opponent", player2Id);
           }
         } else if (action.kind === "pass") {
           const event: TurnPassedEvent = {
@@ -736,6 +1260,7 @@ function GameView({
     game.turn?.turnNumber,
     currentRound.status,
     resolution,
+    isScoreBurstPending,
     reconstruction,
     player2Id,
     game.gameId,
@@ -748,8 +1273,11 @@ function GameView({
     tileCatalog,
     opponentLaunchTileRect,
     opponentPlacementAnimation,
+    pendingDraw,
+    drawAnimation,
     createNextPlacementId,
     appendEvent,
+    startPendingDraw,
   ]);
 
   const advanceToNextRound = useCallback(() => {
@@ -769,15 +1297,11 @@ function GameView({
       scoreAwarded: resolution.scoreAwarded,
       scoreByPlayerId: {
         [player1Id]:
-          game.playerStateById[player1Id].score +
-          (resolution.winnerPlayerId === player1Id
-            ? resolution.scoreAwarded
-            : 0),
+          effectivePlayerScore +
+          (resolution.winnerPlayerId === player1Id ? resolution.scoreAwarded : 0),
         [player2Id]:
-          game.playerStateById[player2Id].score +
-          (resolution.winnerPlayerId === player2Id
-            ? resolution.scoreAwarded
-            : 0),
+          effectiveOpponentScore +
+          (resolution.winnerPlayerId === player2Id ? resolution.scoreAwarded : 0),
       },
       nextStartingPlayerId: resolution.winnerPlayerId || player1Id,
     };
@@ -785,10 +1309,10 @@ function GameView({
     // 2. Check for game winner
     const nextScores = {
       [player1Id]:
-        game.playerStateById[player1Id].score +
+        effectivePlayerScore +
         (resolution.winnerPlayerId === player1Id ? resolution.scoreAwarded : 0),
       [player2Id]:
-        game.playerStateById[player2Id].score +
+        effectiveOpponentScore +
         (resolution.winnerPlayerId === player2Id ? resolution.scoreAwarded : 0),
     };
     const gameEnded = createTargetScoreGameEndedEvent({
@@ -815,11 +1339,14 @@ function GameView({
       });
       appendEvents([roundEnded, nextRoundStarted]);
     }
+
+    setDevScoreOffsets(DEFAULT_DEV_SCORE_OFFSETS);
   }, [
     resolution,
     currentRound,
     game.gameId,
-    game.playerStateById,
+    effectiveOpponentScore,
+    effectivePlayerScore,
     game.metadata.targetScore,
     events.length,
     player1Id,
@@ -849,8 +1376,8 @@ function GameView({
         reason: "forfeit", // Using forfeit as a "skipped" reason
         scoreAwarded: 0,
         scoreByPlayerId: {
-          [player1Id]: game.playerStateById[player1Id].score,
-          [player2Id]: game.playerStateById[player2Id].score,
+          [player1Id]: effectivePlayerScore,
+          [player2Id]: effectiveOpponentScore,
         },
         nextStartingPlayerId: player1Id,
       };
@@ -889,54 +1416,136 @@ function GameView({
     newEvents.push(nextRoundStarted);
 
     appendEvents(newEvents);
+    setDevScoreOffsets(DEFAULT_DEV_SCORE_OFFSETS);
   }, [
     currentRound,
     game.gameId,
-    game.playerStateById,
+    effectiveOpponentScore,
+    effectivePlayerScore,
     events.length,
     player1Id,
     player2Id,
     storedSeed,
     appendEvents,
   ]);
+  const applyDevScorePreset = useCallback(
+    (nextPreset: Partial<Record<"player" | "opponent", number>>) => {
+      const nextOffsets: DevScoreOffsets = {
+        player:
+          typeof nextPreset.player === "number"
+            ? nextPreset.player - playerState.score
+            : devScoreOffsets.player,
+        opponent:
+          typeof nextPreset.opponent === "number"
+            ? nextPreset.opponent - opponentState.score
+            : devScoreOffsets.opponent,
+      };
+      const nextPlayerScore = playerState.score + nextOffsets.player;
+      const nextOpponentScore = opponentState.score + nextOffsets.opponent;
+
+      setDevScoreOffsets(nextOffsets);
+      setScoreBurstQueue([]);
+      setActiveScoreBurst(null);
+      skipScoreSyncRef.current = false;
+      previousScoreSnapshotRef.current = {
+        eventCount: events.length,
+        playerScore: nextPlayerScore,
+        opponentScore: nextOpponentScore,
+      };
+      cancelAnimation(playerDisplayedScoreValue);
+      cancelAnimation(opponentDisplayedScoreValue);
+      cancelAnimation(playerHeaderScoreScale);
+      cancelAnimation(opponentHeaderScoreScale);
+      playerDisplayedScoreValue.value = nextPlayerScore;
+      opponentDisplayedScoreValue.value = nextOpponentScore;
+      playerHeaderScoreScale.value = 1;
+      opponentHeaderScoreScale.value = 1;
+      setDisplayedPlayerScore(nextPlayerScore);
+      setDisplayedOpponentScore(nextOpponentScore);
+    },
+    [
+      devScoreOffsets.opponent,
+      devScoreOffsets.player,
+      events.length,
+      opponentDisplayedScoreValue,
+      opponentHeaderScoreScale,
+      opponentState.score,
+      playerDisplayedScoreValue,
+      playerHeaderScoreScale,
+      playerState.score,
+    ],
+  );
+  const handleAddFriend = useCallback(() => {
+    // Placeholder action until the friend flow exists.
+  }, []);
+  const handleRematch = useCallback(() => {
+    const rematchRoute = buildLocalRematchRoute(opponentProfile?.displayName);
+    router.replace(rematchRoute as any);
+  }, [opponentProfile?.displayName, router]);
+  const handleBackToHome = useCallback(() => {
+    router.replace("/(tabs)/home" as any);
+  }, [router]);
+  const handleSetPlayerScoreNinety = useCallback(() => {
+    applyDevScorePreset({ player: 90 });
+  }, [applyDevScorePreset]);
+  const handleSetOpponentScoreNinetyFive = useCallback(() => {
+    applyDevScorePreset({ opponent: 95 });
+  }, [applyDevScorePreset]);
 
   return (
     <View style={styles.container}>
-      <Pressable
-        style={({ pressed }) => [
-          styles.moreOptionsTrigger,
-          pressed && styles.moreOptionsTriggerPressed,
-        ]}
-        onPress={() => setShowDevTools(!showDevTools)}
-      >
-        <View style={styles.moreOptions}>
-          <Image
-            source={require("@/assets/images/icons/nav-more.svg")}
-            style={styles.moreIcon}
-            contentFit="contain"
-          />
-        </View>
-      </Pressable>
+      {!isGameEndOverlayVisible && (
+        <Pressable
+          style={({ pressed }) => [
+            styles.moreOptionsTrigger,
+            pressed && styles.moreOptionsTriggerPressed,
+          ]}
+          onPress={() => setShowDevTools(!showDevTools)}
+        >
+          <View style={styles.moreOptions}>
+            <Image
+              source={require("@/assets/images/icons/nav-more.svg")}
+              style={styles.moreIcon}
+              contentFit="contain"
+            />
+          </View>
+        </Pressable>
+      )}
 
       <BoardHeader
         opponentName={opponentProfile?.displayName || "Opponent"}
         opponentTitle="Novice" // Static for now as per Figma
         opponentAvatar={require("@/assets/images/avatar(9).png")}
-        playerScore={playerState.score}
-        opponentScore={opponentState.score}
+        playerScore={effectivePlayerScore}
+        opponentScore={effectiveOpponentScore}
+        activeScoreSide={headerActiveScoreSide}
+        displayedPlayerScore={displayedPlayerScore}
+        displayedOpponentScore={displayedOpponentScore}
+        onPlayerScoreRectChange={setPlayerScoreRect}
+        onOpponentScoreRectChange={setOpponentScoreRect}
+        playerScoreScale={playerHeaderScoreScale}
+        opponentScoreScale={opponentHeaderScoreScale}
       />
 
       <View style={styles.content}>
         <OpponentHand
-          count={opponentHandCount}
-          isTurn={game.turn?.activePlayerId === player2Id}
+          count={displayedOpponentHandCount}
+          isTurn={visualTurnPlayerId === player2Id}
           isLaunchingTile={opponentPlacementAnimation !== null}
           onLaunchTileRectChange={setOpponentLaunchTileRect}
+          pendingDrawTileIndex={drawPresentation.trackedOpponentTileIndex}
+          onPendingDrawTileRectChange={setOpponentDrawTargetRect}
         />
 
         <View style={styles.boneyardWrapper}>
           <OpenEndsIndicator scoringTotal={fivesScoringTotal} />
-          <BoneyardIndicator count={boneyardCount} />
+          <View
+            ref={boneyardIndicatorRef}
+            collapsable={false}
+            style={styles.boneyardIndicatorMeasureTarget}
+          >
+            <BoneyardIndicator count={displayedBoneyardCount} />
+          </View>
         </View>
 
         <View ref={viewRef} style={styles.boardContainer} onLayout={onLayout}>
@@ -955,23 +1564,26 @@ function GameView({
 
         {/* Draw button when stuck */}
         {isPlayerTurn &&
+          !isScoreBurstPending &&
           playableTileIds.size === 0 &&
           !activeHandDrag &&
           !placementAnimation &&
-          !opponentPlacementAnimation && (
+          !opponentPlacementAnimation &&
+          !hasDrawActivity && (
             <View style={styles.drawButtonContainer}>
-              <Pressable style={styles.drawButton} onPress={handleDraw}>
-                <Text style={styles.drawButtonText}>
-                  {boneyardCount > 0 ? "Draw Tile" : "Pass Turn"}
-                </Text>
-              </Pressable>
+              <Button
+                label={displayedBoneyardCount > 0 ? "Draw Tile" : "Pass Turn"}
+                variant="play"
+                onPress={handleDraw}
+                style={{ width: "auto" }}
+              />
             </View>
           )}
 
         {/* Gradients behind player hand */}
         <View style={styles.gradientContainer} pointerEvents="none">
           {/* Player turn blue glow gradient (216px) */}
-          {isPlayerTurn && (
+          {isVisualPlayerTurn && (
             <View style={styles.turnGradient}>
               <Svg
                 style={styles.svgFill}
@@ -1022,21 +1634,31 @@ function GameView({
 
         <View style={styles.handWrapper}>
           <PlayerHand
-            hand={playerHand}
+            hand={displayedPlayerHand}
             playableTileIds={playableTileIds}
             hiddenTileIds={hiddenTileIds}
             hasActiveDrag={
               activeHandDrag !== null ||
               placementAnimation !== null ||
-              opponentPlacementAnimation !== null
+              opponentPlacementAnimation !== null ||
+              hasDrawActivity
             }
             activeTileId={activeHandDrag?.tileId ?? null}
             isInteractionEnabled={isBoardInteractionEnabled}
+            trackedTileId={drawPresentation.trackedPlayerTileId}
+            onTrackedTileRectChange={setPlayerDrawTargetRect}
             onDragStart={handleHandDragStart}
             onDragUpdate={onDragUpdate}
             onDragEnd={handleDragEnd}
           />
         </View>
+      </View>
+
+      <View pointerEvents="box-none" style={styles.drawAnimationOverlay}>
+        <DrawTileOverlay
+          animation={drawAnimation}
+          onAnimationComplete={handleDrawAnimationComplete}
+        />
       </View>
 
       <View pointerEvents="box-none" style={styles.opponentDragOverlay}>
@@ -1048,7 +1670,7 @@ function GameView({
           returningDrags={[]}
           hideActiveDrag={false}
           usesVerticalDragActivation={usesVerticalDragActivation}
-          hasActiveDrag={false}
+          hasActiveDrag={hasDrawActivity}
           onPlacementAnimationComplete={handlePlacementAnimationComplete}
           onOpponentPlacementAnimationComplete={
             handleOpponentPlacementAnimationComplete
@@ -1072,7 +1694,8 @@ function GameView({
           hasActiveDrag={
             activeHandDrag !== null ||
             placementAnimation !== null ||
-            opponentPlacementAnimation !== null
+            opponentPlacementAnimation !== null ||
+            hasDrawActivity
           }
           onPlacementAnimationComplete={handlePlacementAnimationComplete}
           onOpponentPlacementAnimationComplete={
@@ -1085,7 +1708,13 @@ function GameView({
         />
       </View>
 
-      {showDevTools && (
+      <ScoreBurstOverlay
+        burst={activeScoreBurst}
+        windowSize={windowSize}
+        onAnimationComplete={handleScoreBurstComplete}
+      />
+
+      {showDevTools && !isGameEndOverlayVisible && (
         <View style={styles.devTools}>
           <View style={styles.devHeader}>
             <Text style={styles.devTitle}>Developer Tools</Text>
@@ -1103,6 +1732,20 @@ function GameView({
 
             <Pressable style={styles.devButton} onPress={forceHands}>
               <Text style={styles.devButtonText}>Force Hands (Test)</Text>
+            </Pressable>
+
+            <Pressable
+              style={styles.devButton}
+              onPress={handleSetPlayerScoreNinety}
+            >
+              <Text style={styles.devButtonText}>Player score 90</Text>
+            </Pressable>
+
+            <Pressable
+              style={styles.devButton}
+              onPress={handleSetOpponentScoreNinetyFive}
+            >
+              <Text style={styles.devButtonText}>Opponent score 95</Text>
             </Pressable>
 
             <Pressable
@@ -1128,7 +1771,7 @@ function GameView({
       )}
 
       {/* Round Resolution Overlay */}
-      {resolution && (
+      {!isScoreBurstPending && resolution && (
         <View style={styles.resolutionOverlay}>
           <View style={styles.resolutionCard}>
             <Text style={styles.resolutionTitle}>
@@ -1154,31 +1797,13 @@ function GameView({
           </View>
         </View>
       )}
-      {/* Game Resolution Overlay */}
-      {game.status === "completed" && (
-        <View style={styles.resolutionOverlay}>
-          <View style={styles.resolutionCard}>
-            <Text style={styles.resolutionTitle}>Game Over!</Text>
-            <Text style={styles.resolutionWinner}>
-              {game.winnerPlayerId === player1Id
-                ? "You Won the Match!"
-                : "Opponent Won the Match!"}
-            </Text>
-            <View style={styles.resolutionScoreRow}>
-              <Text style={styles.resolutionScoreLabel}>Final Score:</Text>
-              <Text style={styles.resolutionScoreValue}>
-                {game.playerStateById[player1Id].score} -{" "}
-                {game.playerStateById[player2Id].score}
-              </Text>
-            </View>
-            <Pressable
-              style={styles.advanceButton}
-              onPress={() => initialize(storedSeed || 123)}
-            >
-              <Text style={styles.advanceButtonText}>Play Again</Text>
-            </Pressable>
-          </View>
-        </View>
+      {isGameEndOverlayVisible && gameEndPresentation && (
+        <GameEndOverlay
+          presentation={gameEndPresentation}
+          onAddFriend={handleAddFriend}
+          onRematch={handleRematch}
+          onBackToHome={handleBackToHome}
+        />
       )}
     </View>
   );
@@ -1278,6 +1903,10 @@ const styles = StyleSheet.create((theme) => ({
     ...StyleSheet.absoluteFillObject,
     zIndex: 5,
   },
+  drawAnimationOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 8,
+  },
   playerDragOverlay: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 25,
@@ -1289,29 +1918,16 @@ const styles = StyleSheet.create((theme) => ({
     top: 32, // Below header
     zIndex: 10,
   },
+  boneyardIndicatorMeasureTarget: {
+    alignSelf: "flex-start",
+  },
   drawButtonContainer: {
     position: "absolute",
-    bottom: 120,
+    bottom: 140,
     left: 0,
     right: 0,
     alignItems: "center",
     zIndex: 20,
-  },
-  drawButton: {
-    backgroundColor: colors.blue,
-    paddingVertical: spacing[16],
-    paddingHorizontal: spacing[24],
-    borderRadius: 99,
-    shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  drawButtonText: {
-    color: colors.white,
-    ...typography.paragraph,
-    fontWeight: "600",
   },
   gradientContainer: {
     ...StyleSheet.absoluteFillObject,
@@ -1337,7 +1953,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   moreOptionsTrigger: {
     position: "absolute",
-    bottom: 160,
+    bottom: 140,
     left: spacing[16],
     width: 50,
     height: 50,

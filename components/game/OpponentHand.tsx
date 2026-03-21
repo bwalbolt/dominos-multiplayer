@@ -17,7 +17,7 @@ import { spacing } from "@/theme/tokens";
 import { ScreenRect } from "./hand-drag.types";
 import {
   resolveOpponentLaunchTileIndex,
-  shouldHideOpponentLaunchTile,
+  shouldHideOpponentTile,
 } from "./opponent-hand.utils";
 
 const OPPONENT_TURN_ENTER_DURATION_MS = 600;
@@ -28,6 +28,8 @@ interface OpponentHandProps {
   isTurn?: boolean;
   isLaunchingTile?: boolean;
   onLaunchTileRectChange?: (rect: ScreenRect | null) => void;
+  pendingDrawTileIndex?: number | null;
+  onPendingDrawTileRectChange?: (rect: ScreenRect | null) => void;
 }
 
 export const OpponentHand: React.FC<OpponentHandProps> = ({
@@ -35,6 +37,8 @@ export const OpponentHand: React.FC<OpponentHandProps> = ({
   isTurn = false,
   isLaunchingTile = false,
   onLaunchTileRectChange,
+  pendingDrawTileIndex = null,
+  onPendingDrawTileRectChange,
 }) => {
   const containerTranslateY = useSharedValue(0);
   const [isDrumming, setIsDrumming] = useState(false);
@@ -92,6 +96,43 @@ export const OpponentHand: React.FC<OpponentHandProps> = ({
   }, [count, isLaunchingTile, isTurn, launchTileIndex, onLaunchTileRectChange]);
 
   useEffect(() => {
+    if (!onPendingDrawTileRectChange) {
+      return;
+    }
+
+    if (pendingDrawTileIndex === null || count <= 0) {
+      onPendingDrawTileRectChange(null);
+      return;
+    }
+
+    const measureTile = () => {
+      const pendingDrawTile = tileWrapperRefs.current[pendingDrawTileIndex];
+      if (!pendingDrawTile) {
+        onPendingDrawTileRectChange(null);
+        return;
+      }
+
+      pendingDrawTile.measureInWindow((x, y, width, height) => {
+        onPendingDrawTileRectChange({ x, y, width, height });
+      });
+    };
+
+    let delayedFrameId: number | null = null;
+    const frameId = requestAnimationFrame(measureTile);
+    const timeoutId = setTimeout(() => {
+      delayedFrameId = requestAnimationFrame(measureTile);
+    }, 50);
+
+    return () => {
+      cancelAnimationFrame(frameId);
+      if (delayedFrameId !== null) {
+        cancelAnimationFrame(delayedFrameId);
+      }
+      clearTimeout(timeoutId);
+    };
+  }, [count, onPendingDrawTileRectChange, pendingDrawTileIndex]);
+
+  useEffect(() => {
     if (isTurn) {
       containerTranslateY.value = withTiming(spacing[16], {
         duration: OPPONENT_TURN_ENTER_DURATION_MS,
@@ -132,7 +173,10 @@ export const OpponentHand: React.FC<OpponentHandProps> = ({
           <OpponentTile
             index={index}
             isDrumming={isDrumming}
-            isHidden={shouldHideOpponentLaunchTile(index, count, isLaunchingTile)}
+            isHidden={shouldHideOpponentTile(index, count, {
+              isLaunchingTile,
+              pendingDrawTileIndex,
+            })}
           />
         </View>
       ))}

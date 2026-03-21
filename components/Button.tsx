@@ -1,10 +1,12 @@
 import {
   designTokens,
+  gameEndLayout,
   pillBorderRadius,
   spacing,
   typography,
 } from "@/theme/tokens";
 import { Image } from "expo-image";
+import type { ImageProps } from "expo-image";
 import { useMemo, useState } from "react";
 import { Pressable, StyleProp, Text, View, ViewStyle } from "react-native";
 import Svg, {
@@ -16,25 +18,43 @@ import Svg, {
 } from "react-native-svg";
 import { StyleSheet } from "react-native-unistyles";
 export type ButtonVariant = "default" | "secondary" | "play" | "tertiary";
+export type ButtonSize = "default" | "compact";
+export type ButtonIconPosition = "start" | "end";
 
 interface ButtonProps {
   label: string;
   variant?: ButtonVariant;
+  size?: ButtonSize;
   onPress?: () => void;
   disabled?: boolean;
   style?: StyleProp<ViewStyle>;
   hasIcon?: boolean;
+  iconSource?: ImageProps["source"];
+  iconTintColor?: string;
+  iconPosition?: ButtonIconPosition;
 }
 
 export function Button({
   label,
   variant = "default",
+  size = "default",
   onPress,
   disabled = false,
   style,
   hasIcon = false,
+  iconSource,
+  iconTintColor,
+  iconPosition = "end",
 }: ButtonProps) {
   const isDefault = variant === "default";
+  const resolvedIconSource =
+    iconSource ??
+    (hasIcon ? require("@/assets/images/icons/Arrow_Right_SM.svg") : null);
+  const resolvedIconTintColor =
+    iconTintColor ??
+    (isDefault || variant === "play"
+      ? designTokens.colors.white
+      : designTokens.colors.iron);
 
   // We explicitly measure button dimensions via onLayout.
   // DO NOT use StyleSheet.absoluteFillObject or 100% width/height on the Svg
@@ -52,6 +72,14 @@ export function Button({
 
   const content = (
     <View style={styles.contentContainer}>
+      {resolvedIconSource && iconPosition === "start" && (
+        <Image
+          source={resolvedIconSource}
+          style={[styles.icon, styles.iconStart]}
+          contentFit="contain"
+          tintColor={resolvedIconTintColor}
+        />
+      )}
       <Text
         style={[
           styles.label,
@@ -66,16 +94,12 @@ export function Button({
       >
         {label}
       </Text>
-      {hasIcon && (
+      {resolvedIconSource && iconPosition === "end" && (
         <Image
-          source={
-            isDefault || variant === "play"
-              ? require("@/assets/images/icons/Arrow_Right_SM.svg") // White arrow
-              : require("@/assets/images/icons/Arrow_Right_SM.svg") // TODO: Provide dark arrow if needed
-          }
+          source={resolvedIconSource}
           style={styles.icon}
           contentFit="contain"
-          tintColor={isDefault || variant === "play" ? "#FFFFFF" : "#4E3D42"}
+          tintColor={resolvedIconTintColor}
         />
       )}
     </View>
@@ -100,6 +124,14 @@ export function Button({
             | "playBase"
             | "tertiaryBase"
         ],
+        size === "compact" &&
+          styles[
+            `${variant}BaseCompact` as
+              | "defaultBaseCompact"
+              | "secondaryBaseCompact"
+              | "playBaseCompact"
+              | "tertiaryBaseCompact"
+          ],
         pressed && styles.pressed,
         disabled && styles.disabled,
         style,
@@ -267,6 +299,10 @@ const styles = StyleSheet.create({
     height: 16,
     marginLeft: spacing[8],
   },
+  iconStart: {
+    marginLeft: 0,
+    marginRight: spacing[8],
+  },
   label: {
     textAlign: "center",
   },
@@ -279,6 +315,12 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     borderColor: designTokens.colors.white,
   },
+  defaultBaseCompact: {
+    height: gameEndLayout.compactButtonHeight,
+    borderRadius: gameEndLayout.compactButtonRadius,
+    paddingVertical: gameEndLayout.compactButtonVerticalPadding,
+    paddingHorizontal: gameEndLayout.compactButtonHorizontalPadding,
+  },
   secondaryBase: {
     height: 56,
     borderRadius: pillBorderRadius,
@@ -286,21 +328,39 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing[32],
     backgroundColor: designTokens.colors.backgroundColor,
   },
+  secondaryBaseCompact: {
+    height: gameEndLayout.compactButtonHeight,
+    borderRadius: gameEndLayout.compactButtonRadius,
+    paddingVertical: gameEndLayout.compactButtonVerticalPadding,
+    paddingHorizontal: gameEndLayout.compactButtonHorizontalPadding,
+  },
   playBase: {
     height: 50,
     borderRadius: spacing[32],
-    paddingVertical: 12,
+    paddingVertical: spacing[16],
     paddingHorizontal: spacing[32],
     borderWidth: 3,
     borderColor: designTokens.colors.white,
     backgroundColor: "transparent",
   },
+  playBaseCompact: {
+    height: gameEndLayout.compactButtonHeight,
+    borderRadius: gameEndLayout.compactButtonRadius,
+    paddingVertical: gameEndLayout.compactButtonVerticalPadding,
+    paddingHorizontal: gameEndLayout.compactButtonHorizontalPadding,
+  },
   tertiaryBase: {
     height: 48,
     borderRadius: spacing[32],
-    paddingVertical: 12,
+    paddingVertical: spacing[16],
     paddingHorizontal: spacing[32],
-    backgroundColor: designTokens.colors.black08,
+    backgroundColor: designTokens.colors.black04,
+  },
+  tertiaryBaseCompact: {
+    height: gameEndLayout.compactButtonHeight,
+    borderRadius: gameEndLayout.compactButtonRadius,
+    paddingVertical: gameEndLayout.compactButtonVerticalPadding,
+    paddingHorizontal: gameEndLayout.compactButtonHorizontalPadding,
   },
   // Variant label styles
   defaultLabel: {
